@@ -2,7 +2,10 @@ package reconcile
 
 import (
 	"fmt"
+	"path"
 	"sort"
+	"strconv"
+	"strings"
 
 	"kanban-sync/internal/config"
 	"kanban-sync/internal/domain"
@@ -10,6 +13,21 @@ import (
 	"kanban-sync/internal/notes"
 	"kanban-sync/internal/provider"
 )
+
+// localTitle returns the title to use for sync comparisons: for a
+// linked card, the title derived from its note link, not whatever
+// alias the card's wikilink currently displays. Without this, an
+// aliased card like "[[Tasks/42 Yandex OAuth|OAuth]]" would never
+// match a remote title of "Yandex OAuth" and would drift forever
+// (controller ruling, alias drift). Unlinked cards use Title as-is.
+func localTitle(c *kanban.Card) string {
+	if c.Link == "" {
+		return c.Title
+	}
+	base := path.Base(c.Link)
+	prefix := strconv.Itoa(c.IssueID) + " "
+	return strings.TrimPrefix(base, prefix)
+}
 
 // Input bundles everything the planner needs: the config, the parsed
 // board, and the remote state already fetched by FetchRemote.
@@ -147,11 +165,16 @@ func PlanPush(in Input) Plan {
 				warn.add(fmt.Sprintf("card at line %d has no title; skipped", card.Line))
 				continue
 			}
+			// A card that already has its own [[link]] (e.g. a draft
+			// note linked by hand before ever being pushed) must not
+			// get a second, duplicate note: only create one when the
+			// card has no link yet and doesn't already resolve to one.
+			withNote := in.Cfg.Notes == config.NotesAlways && card.Link == "" && !in.HasNote(card)
 			changes = append(changes, CreateIssue{
 				Card:     card,
 				Title:    localTitle(card),
 				Status:   card.Status,
-				WithNote: in.Cfg.Notes == config.NotesAlways,
+				WithNote: withNote,
 			})
 			continue
 		}

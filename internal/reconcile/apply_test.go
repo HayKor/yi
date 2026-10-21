@@ -349,6 +349,68 @@ func TestApplyCreateIssueWritesID(t *testing.T) {
 	}
 }
 
+// TestApplyCreateIssueNoteFailureKeepsID guards against losing a
+// created issue's id when the local follow-up step (creating its
+// note) fails: a squatter file already occupies the exact path the
+// new note would take, but belongs to a different issue, so
+// notes.Store.Create refuses to touch it. The remote issue still
+// exists, so the id must land on the card regardless.
+func TestApplyCreateIssueNoteFailureKeepsID(t *testing.T) {
+	dir := t.TempDir()
+	cfg := applyTestConfig(t, dir, "always")
+	writeKanban(t, cfg.KanbanPath, "## Backlog\n\n## Todo\n\n- [ ] New thing\n\n## In Progress\n\n## Completed\n")
+
+	if err := os.MkdirAll(cfg.TasksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The first issue fake.Provider creates will get id 1, so this
+	// squats on the exact path notes.Store.Create would use for it.
+	squatter := filepath.Join(cfg.TasksDir, "1 New thing.md")
+	if err := os.WriteFile(squatter, []byte("---\nissue: 99\n---\n\n# Someone else's note\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := fake.New()
+	a, board, _ := newApplier(t, cfg, p)
+	ctx := context.Background()
+	remote, missing, err := FetchRemote(ctx, p, board)
+	if err != nil {
+		t.Fatalf("FetchRemote() error = %v", err)
+	}
+	plan := PlanPush(Input{Cfg: cfg, Board: board, Remote: remote, Missing: missing, HasNote: hasNoteFn(a)})
+
+	err = a.Apply(ctx, plan)
+	if err == nil || !strings.Contains(err.Error(), "applied 0 of 1") {
+		t.Fatalf("Apply() error = %v, want containing \"applied 0 of 1\"", err)
+	}
+
+	// The remote issue was created regardless of the local failure.
+	if issue := p.Issue(1); issue.Title != "New thing" {
+		t.Errorf("remote issue #1 = %+v, want it created regardless", issue)
+	}
+
+	data, err := os.ReadFile(cfg.KanbanPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "New thing `#1`") {
+		t.Errorf("Kanban.md = %q, want #1 recorded on the card despite the note failure", data)
+	}
+
+	// A re-plan must not try to create a duplicate issue for it.
+	a2, board2, _ := newApplier(t, cfg, p)
+	remote2, missing2, err := FetchRemote(ctx, p, board2)
+	if err != nil {
+		t.Fatalf("FetchRemote() (2nd) error = %v", err)
+	}
+	plan2 := PlanPush(Input{Cfg: cfg, Board: board2, Remote: remote2, Missing: missing2, HasNote: hasNoteFn(a2)})
+	for _, c := range plan2.Changes {
+		if _, ok := c.(CreateIssue); ok {
+			t.Errorf("second PlanPush = %#v, want no CreateIssue (would duplicate #1)", plan2.Changes)
+		}
+	}
+}
+
 func TestApplyCreateInCompletedCloses(t *testing.T) {
 	dir := t.TempDir()
 	cfg := applyTestConfig(t, dir, "on-demand")
@@ -450,6 +512,42 @@ func TestPushPartialFailureKeepsIDs(t *testing.T) {
 	open, _ := p2.ListOpenIssues(ctx)
 	if len(open) != 3 {
 		t.Errorf("open issues = %v, want 3 total", open)
+	}
+}
+
+// TestApplyCreateLinkedCardPreservesLink is the applier-level half of
+// the "linked id-less card" ruling: pushing it must only append the
+// `#id` token (via SetIssueID), leaving its link, alias, and any
+// other text on the line untouched, and must not create a second note
+// for an issue that already has one linked.
+func TestApplyCreateLinkedCardPreservesLink(t *testing.T) {
+	dir := t.TempDir()
+	cfg := applyTestConfig(t, dir, "always")
+	writeKanban(t, cfg.KanbanPath, "## Backlog\n\n## Todo\n\n- [ ] [[Tasks/Draft idea|Idea]] @{2026-11-01}\n\n## In Progress\n\n## Completed\n")
+
+	p := fake.New()
+	a, board, _ := newApplier(t, cfg, p)
+	ctx := context.Background()
+	remote, missing, err := FetchRemote(ctx, p, board)
+	if err != nil {
+		t.Fatalf("FetchRemote() error = %v", err)
+	}
+	plan := PlanPush(Input{Cfg: cfg, Board: board, Remote: remote, Missing: missing, HasNote: hasNoteFn(a)})
+
+	if err := a.Apply(ctx, plan); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	data, err := os.ReadFile(cfg.KanbanPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "- [ ] [[Tasks/Draft idea|Idea]] @{2026-11-01} `#1`") {
+		t.Errorf("Kanban.md = %q, want the link/alias/date preserved with #1 appended", data)
+	}
+
+	if _, err := os.Stat(filepath.Join(cfg.TasksDir, "1 Draft idea.md")); !os.IsNotExist(err) {
+		t.Errorf("a note file was created for a card that already had its own link")
 	}
 }
 
@@ -607,5 +705,95 @@ func TestRenameLocalRenamesNote(t *testing.T) {
 
 	if got := logBuf.String(); !strings.Contains(got, `warning: other links to "Old Title" were not updated`) {
 		t.Errorf("Log = %q, want the \"other links\" warning", got)
+	}
+}
+
+// TestRenameLocalMissingNoteLeavesCardUnchanged covers a RenameLocal
+// whose card has a link, but nothing resolves it (the note was
+// deleted, moved, or never existed): the card must be left exactly as
+// it was — never silently rewritten into a plain, link-less card —
+// and a warning must explain why nothing happened.
+func TestRenameLocalMissingNoteLeavesCardUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	cfg := applyTestConfig(t, dir, "on-demand")
+	writeKanban(t, cfg.KanbanPath, "## Backlog\n\n- [ ] [[Tasks/42 Missing]] `#42`\n\n## Todo\n\n## In Progress\n\n## Completed\n")
+
+	p := fake.New()
+	a, board, logBuf := newApplier(t, cfg, p)
+	card := board.Find(42)
+	if card == nil {
+		t.Fatalf("card #42 not found on board")
+	}
+
+	change := RenameLocal{Card: card, ID: 42, From: "Missing", To: "New Title"}
+	if err := a.Apply(context.Background(), Plan{Changes: []Change{change}}); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	data, err := os.ReadFile(cfg.KanbanPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "[[Tasks/42 Missing]] `#42`") {
+		t.Errorf("Kanban.md = %q, want the card left exactly as it was", data)
+	}
+
+	if got := logBuf.String(); !strings.Contains(got, `warning: #42: note "Tasks/42 Missing" not found; card not renamed`) {
+		t.Errorf("Log = %q, want the \"note not found\" warning", got)
+	}
+}
+
+// TestPullTwiceIsNoopLossyTitle is TestPullTwiceIsNoop's required
+// lossy-title variant (spec §6.4): the remote title "Fix: crash" is
+// not byte-equal to the card's link-derived local title "Fix crash",
+// but sanitize() makes them equal, so neither a pull nor a push round
+// trip should ever produce a rename.
+func TestPullTwiceIsNoopLossyTitle(t *testing.T) {
+	dir := t.TempDir()
+	cfg := applyTestConfig(t, dir, "on-demand")
+
+	if err := os.MkdirAll(cfg.TasksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	notePath := filepath.Join(cfg.TasksDir, "31 Fix crash.md")
+	if err := os.WriteFile(notePath, []byte("---\nissue: 31\n---\n\n# Fix crash\n\n## Context\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeKanban(t, cfg.KanbanPath, "## Backlog\n\n- [ ] [[Tasks/31 Fix crash]] `#31`\n\n## Todo\n\n## In Progress\n\n## Completed\n")
+
+	p := fake.New()
+	// Already labeled to match the card's column, so a push from this
+	// same state has nothing to fix up either: this test is purely
+	// about the lossy-title comparison, not status drift.
+	p.Seed(domain.Issue{ID: 31, Title: "Fix: crash", State: domain.IssueOpen, Labels: []string{"status:backlog"}})
+
+	a, board, _ := newApplier(t, cfg, p)
+	ctx := context.Background()
+	remote, missing, err := FetchRemote(ctx, p, board)
+	if err != nil {
+		t.Fatalf("FetchRemote() error = %v", err)
+	}
+	plan := PlanPull(Input{Cfg: cfg, Board: board, Remote: remote, Missing: missing, HasNote: hasNoteFn(a)})
+	if !plan.Empty() {
+		t.Fatalf("first PlanPull = %#v, want none (sanitize(\"Fix: crash\") == sanitize(\"Fix crash\"))", plan.Changes)
+	}
+
+	if err := a.Apply(ctx, plan); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	a2, board2, _ := newApplier(t, cfg, p)
+	remote2, missing2, err := FetchRemote(ctx, p, board2)
+	if err != nil {
+		t.Fatalf("FetchRemote() (2nd) error = %v", err)
+	}
+	plan2 := PlanPull(Input{Cfg: cfg, Board: board2, Remote: remote2, Missing: missing2, HasNote: hasNoteFn(a2)})
+	if !plan2.Empty() {
+		t.Errorf("second PlanPull = %#v, want none", plan2.Changes)
+	}
+
+	plan3 := PlanPush(Input{Cfg: cfg, Board: board2, Remote: remote2, Missing: missing2, HasNote: hasNoteFn(a2)})
+	if !plan3.Empty() {
+		t.Errorf("PlanPush from the same state = %#v, want none", plan3.Changes)
 	}
 }

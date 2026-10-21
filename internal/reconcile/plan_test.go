@@ -446,6 +446,34 @@ func TestPlanPushCreateSkipsEmptyTitle(t *testing.T) {
 	}
 }
 
+// TestPlanPushCreateLinkedCardSkipsNote covers the ruling that an
+// id-less card which already has its own [[link]] (e.g. a draft note
+// the user linked by hand before ever pushing it) must not get a
+// second, duplicate note created for it: WithNote is false whenever
+// the card already has a link, regardless of notes.create mode.
+func TestPlanPushCreateLinkedCardSkipsNote(t *testing.T) {
+	cfg := testConfig(t, "always")
+	board := buildBoard(t, "## Backlog\n\n## Todo\n\n- [ ] [[Tasks/Draft idea|Idea]] @{2026-11-01}\n\n## In Progress\n\n## Completed\n")
+
+	in := Input{Cfg: cfg, Board: board, Remote: map[int]domain.Issue{}, Missing: map[int]bool{}, HasNote: noNote}
+
+	plan := PlanPush(in)
+
+	if len(plan.Changes) != 1 {
+		t.Fatalf("Changes = %#v, want exactly one CreateIssue", plan.Changes)
+	}
+	ci, ok := plan.Changes[0].(CreateIssue)
+	if !ok {
+		t.Fatalf("Changes[0] = %#v, want CreateIssue", plan.Changes[0])
+	}
+	if ci.WithNote {
+		t.Errorf("CreateIssue.WithNote = true, want false: the card already has its own link")
+	}
+	if ci.Title != "Draft idea" {
+		t.Errorf("CreateIssue.Title = %q, want %q (from the link, not the alias)", ci.Title, "Draft idea")
+	}
+}
+
 func TestPlanPushRenameRemote(t *testing.T) {
 	cfg := testConfig(t, "on-demand")
 	board := buildBoard(t, "## Backlog\n\n- [ ] [[Tasks/42 OAuth v2]] `#42`\n\n## Todo\n\n## In Progress\n\n## Completed\n")

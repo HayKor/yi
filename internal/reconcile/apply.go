@@ -6,9 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path"
-	"strconv"
-	"strings"
 
 	"kanban-sync/internal/config"
 	"kanban-sync/internal/domain"
@@ -16,21 +13,6 @@ import (
 	"kanban-sync/internal/notes"
 	"kanban-sync/internal/provider"
 )
-
-// localTitle returns the title to use for sync comparisons: for a
-// linked card, the title derived from its note link, not whatever
-// alias the card's wikilink currently displays. Without this, an
-// aliased card like "[[Tasks/42 Yandex OAuth|OAuth]]" would never
-// match a remote title of "Yandex OAuth" and would drift forever
-// (controller ruling, alias drift). Unlinked cards use Title as-is.
-func localTitle(c *kanban.Card) string {
-	if c.Link == "" {
-		return c.Title
-	}
-	base := path.Base(c.Link)
-	prefix := strconv.Itoa(c.IssueID) + " "
-	return strings.TrimPrefix(base, prefix)
-}
 
 // Applier executes a Plan against Provider and the local board/notes.
 // Board must have been parsed from the file at Cfg.KanbanPath, and
@@ -177,29 +159,41 @@ func (a *Applier) applyLinkNote(v LinkNote) error {
 
 // applyRenameLocal implements RenameLocal: if the card has a note,
 // rename it (keeping the card's alias, if any) and warn that other
-// vault links to the old title weren't updated; otherwise it's a
-// plain card and its first line is simply rewritten.
+// vault links to the old title weren't updated. If the card has no
+// link at all, it's a plain card and its first line is simply
+// rewritten. But if the card does have a link and nothing resolves
+// it (the note was deleted, moved, or never existed), the card is
+// left exactly as it was rather than being silently rewritten into a
+// plain, link-less card — only a warning is logged.
 func (a *Applier) applyRenameLocal(v RenameLocal, log io.Writer) error {
-	if notePath, ok := a.Notes.Resolve(a.Index, v.ID, v.Card.Link); ok {
-		newPath, err := a.Notes.Rename(a.Index, notePath, v.ID, v.From, v.To)
-		if err != nil {
-			return err
+	notePath, ok := a.Notes.Resolve(a.Index, v.ID, v.Card.Link)
+	if !ok {
+		if v.Card.Link != "" {
+			fmt.Fprintf(log, "warning: #%d: note %q not found; card not renamed\n", v.ID, v.Card.Link)
+			return nil
 		}
-		if err := a.Board.SetLink(v.Card, a.Notes.LinkTarget(newPath)); err != nil {
-			return err
-		}
-		fmt.Fprintf(log, "warning: other links to %q were not updated\n", v.From)
-		return nil
+		line := kanban.FormatCard(v.Card.Checked, v.To, "", v.ID)
+		return a.Board.RewriteFirstLine(v.Card, line)
 	}
 
-	line := kanban.FormatCard(v.Card.Checked, v.To, "", v.ID)
-	return a.Board.RewriteFirstLine(v.Card, line)
+	newPath, err := a.Notes.Rename(a.Index, notePath, v.ID, v.From, v.To)
+	if err != nil {
+		return err
+	}
+	if err := a.Board.SetLink(v.Card, a.Notes.LinkTarget(newPath)); err != nil {
+		return err
+	}
+	fmt.Fprintf(log, "warning: other links to %q were not updated\n", v.From)
+	return nil
 }
 
 // applyCreateIssue implements CreateIssue: create the remote issue,
 // then immediately record its id on the card (and in *created) before
-// doing anything else — so a failing close (below) can never lose a
-// created issue's id.
+// doing anything else — including before creating its note — so that
+// a failing follow-up step (the note's target path squatted by a
+// different issue, or a failing close call below) can never lose a
+// created issue's id. The note (if WithNote) is created and linked
+// only after the id is already safely on the card.
 func (a *Applier) applyCreateIssue(ctx context.Context, v CreateIssue, created *[]createdIssue) error {
 	toStatus, ok := a.Cfg.Status(v.Status)
 	if !ok {
@@ -219,6 +213,11 @@ func (a *Applier) applyCreateIssue(ctx context.Context, v CreateIssue, created *
 	}
 	id := newIssue.ID
 
+	if err := a.Board.SetIssueID(v.Card, id); err != nil {
+		return err
+	}
+	*created = append(*created, createdIssue{id: id, title: v.Title})
+
 	if v.WithNote {
 		notePath, err := a.Notes.Create(a.Index, id, v.Title)
 		if err != nil {
@@ -229,10 +228,7 @@ func (a *Applier) applyCreateIssue(ctx context.Context, v CreateIssue, created *
 		if err := a.Board.RewriteFirstLine(v.Card, line); err != nil {
 			return err
 		}
-	} else if err := a.Board.SetIssueID(v.Card, id); err != nil {
-		return err
 	}
-	*created = append(*created, createdIssue{id: id, title: v.Title})
 
 	if toStatus.CloseIssue {
 		if err := ctx.Err(); err != nil {
