@@ -201,9 +201,12 @@ func isHeadingLine(content string) bool {
 
 // isTrailerStart reports whether content (EOL already stripped) is the
 // first line of the trailer: the Kanban plugin's archive separator
-// ("***") or the start of its settings block.
+// ("***") or the start of its settings block. Both must start at column
+// 0 — an indented "***" (e.g. a card's continuation line, or stray text
+// in an opaque section) is ordinary content, not a trailer marker.
+// Trailing whitespace after "***" is still allowed.
 func isTrailerStart(content string) bool {
-	if strings.TrimSpace(content) == "***" {
+	if strings.TrimRight(content, " \t") == "***" {
 		return true
 	}
 	return strings.HasPrefix(content, "%% kanban:settings")
@@ -255,8 +258,13 @@ func (b *Board) Cards() []*Card {
 }
 
 // Find returns the card with the given issue id, or nil if there is
-// none (including when id only appears in an opaque section).
+// none (including when id only appears in an opaque section). id <= 0
+// never matches: 0 means "no issue yet", a state shared by every
+// plain card, not an id to look up.
 func (b *Board) Find(id int) *Card {
+	if id <= 0 {
+		return nil
+	}
 	for _, c := range b.Cards() {
 		if c.IssueID == id {
 			return c

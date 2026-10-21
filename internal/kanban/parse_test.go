@@ -98,6 +98,133 @@ func TestCardsParsedFromPluginBoard(t *testing.T) {
 	}
 }
 
+// TestCardOwnsContinuationLines checks that card #73's own line storage
+// (not just its parsed fields) includes its two tab-indented
+// continuation lines, in order — required for Task 5's Move, which
+// relocates a card by moving its lines as a unit.
+func TestCardOwnsContinuationLines(t *testing.T) {
+	data := readTestdata(t, "plugin.md")
+	b, err := Parse(data, testStatuses())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	card := b.Find(73)
+	if card == nil {
+		t.Fatal("Find(73) = nil, want card")
+	}
+	if len(card.lines) != 3 {
+		t.Fatalf("card #73 has %d lines, want 3 (first line + 2 continuation lines): %q", len(card.lines), card.lines)
+	}
+	if want := "- [ ] [[Tasks/73 Creative Preview]] `#73`\n"; card.lines[0] != want {
+		t.Errorf("lines[0] = %q, want %q", card.lines[0], want)
+	}
+	if want := "\tsecond line of card\n"; card.lines[1] != want {
+		t.Errorf("lines[1] = %q, want %q", card.lines[1], want)
+	}
+	if want := "\t- [ ] nested checklist item\n"; card.lines[2] != want {
+		t.Errorf("lines[2] = %q, want %q", card.lines[2], want)
+	}
+}
+
+// TestIndentedTripleStarInContinuationDoesNotStartTrailer is a
+// regression test: an indented "***" that is a card's continuation
+// line must not be mistaken for the plugin's archive separator, which
+// only ever appears at column 0. Before the fix, this swallowed every
+// later card and section into the trailer.
+func TestIndentedTripleStarInContinuationDoesNotStartTrailer(t *testing.T) {
+	data := []byte("## Backlog\n" +
+		"\n" +
+		"- [ ] A `#1`\n" +
+		"\t***\n" +
+		"- [ ] B `#2`\n" +
+		"\n" +
+		"## Todo\n" +
+		"\n" +
+		"- [ ] C `#3`\n")
+
+	b, err := Parse(data, testStatuses())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	cards := b.Cards()
+	if len(cards) != 3 {
+		t.Fatalf("Cards() = %d cards, want 3: %+v", len(cards), cards)
+	}
+	if b.Find(1) == nil {
+		t.Error("Find(1) = nil, want card A")
+	}
+	if b.Find(2) == nil {
+		t.Error("Find(2) = nil, want card B")
+	}
+	if b.Find(3) == nil {
+		t.Error("Find(3) = nil, want card C")
+	}
+
+	if got := b.Bytes(); !bytes.Equal(got, data) {
+		t.Errorf("round trip mismatch:\n--- want ---\n%s\n--- got ---\n%s", data, got)
+	}
+}
+
+// TestIndentedTripleStarInOpaqueSectionDoesNotStartTrailer covers the
+// same bug in an unconfigured ("Ideas") section: a "***" with leading
+// whitespace there is just opaque content, not a trailer marker either.
+func TestIndentedTripleStarInOpaqueSectionDoesNotStartTrailer(t *testing.T) {
+	data := []byte("## Backlog\n" +
+		"\n" +
+		"- [ ] A `#1`\n" +
+		"\n" +
+		"## Ideas\n" +
+		"\n" +
+		"  ***\n" +
+		"- [ ] Unknown `#99`\n" +
+		"\n" +
+		"## Todo\n" +
+		"\n" +
+		"- [ ] C `#3`\n")
+
+	b, err := Parse(data, testStatuses())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	cards := b.Cards()
+	if len(cards) != 2 {
+		t.Fatalf("Cards() = %d cards, want 2: %+v", len(cards), cards)
+	}
+	if b.Find(1) == nil {
+		t.Error("Find(1) = nil, want card A")
+	}
+	if b.Find(3) == nil {
+		t.Error("Find(3) = nil, want card C")
+	}
+	if b.Find(99) != nil {
+		t.Error("Find(99) != nil, want nil (Ideas is unconfigured)")
+	}
+
+	if got := b.Bytes(); !bytes.Equal(got, data) {
+		t.Errorf("round trip mismatch:\n--- want ---\n%s\n--- got ---\n%s", data, got)
+	}
+}
+
+// TestFindRejectsNonPositiveID checks the controller ruling that
+// Find(id) with id <= 0 always returns nil, rather than matching the
+// first plain card (IssueID == 0).
+func TestFindRejectsNonPositiveID(t *testing.T) {
+	data := readTestdata(t, "plugin.md")
+	b, err := Parse(data, testStatuses())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	for _, id := range []int{0, -1, -42} {
+		if got := b.Find(id); got != nil {
+			t.Errorf("Find(%d) = %+v, want nil", id, *got)
+		}
+	}
+}
+
 func parseSingleCard(t *testing.T, firstLine string) *Card {
 	t.Helper()
 	data := []byte("## Backlog\n\n" + firstLine + "\n")
