@@ -229,6 +229,27 @@ func TestPullLossyTitleNoDrift(t *testing.T) {
 	}
 }
 
+func TestPullAliasedCardNoDrift(t *testing.T) {
+	cfg := testConfig(t, "on-demand")
+	board := buildBoard(t, "## Backlog\n\n- [ ] [[Tasks/42 Yandex OAuth|OAuth]] `#42`\n\n## Todo\n\n## In Progress\n\n## Completed\n")
+
+	in := Input{
+		Cfg:   cfg,
+		Board: board,
+		Remote: map[int]domain.Issue{
+			42: {ID: 42, Title: "Yandex OAuth", State: domain.IssueOpen},
+		},
+		Missing: map[int]bool{},
+		HasNote: allNotes,
+	}
+
+	plan := PlanPull(in)
+
+	if !plan.Empty() {
+		t.Errorf("Changes = %#v, want none (title comes from the link, not the alias \"OAuth\")", plan.Changes)
+	}
+}
+
 func TestPlanPullLinkNote(t *testing.T) {
 	board := buildBoard(t, "## Backlog\n\n- [ ] Some title `#5`\n\n## Todo\n\n## In Progress\n\n## Completed\n")
 	remote := map[int]domain.Issue{
@@ -450,6 +471,27 @@ func TestPlanPushRenameRemote(t *testing.T) {
 	}
 	if rr.ID != 42 || rr.From != "OAuth" || rr.To != "OAuth v2" {
 		t.Errorf("RenameRemote = %+v, want {ID:42 From:\"OAuth\" To:\"OAuth v2\"}", rr)
+	}
+}
+
+func TestPushAliasedCardNoDrift(t *testing.T) {
+	cfg := testConfig(t, "on-demand")
+	board := buildBoard(t, "## Backlog\n\n- [ ] [[Tasks/42 Yandex OAuth|OAuth]] `#42`\n\n## Todo\n\n## In Progress\n\n## Completed\n")
+
+	in := Input{
+		Cfg:   cfg,
+		Board: board,
+		Remote: map[int]domain.Issue{
+			42: {ID: 42, Title: "Yandex OAuth", State: domain.IssueOpen, Labels: []string{"status:backlog"}},
+		},
+		Missing: map[int]bool{},
+		HasNote: noNote,
+	}
+
+	plan := PlanPush(in)
+
+	if !plan.Empty() {
+		t.Errorf("Changes = %#v, want none (title comes from the link, not the alias \"OAuth\")", plan.Changes)
 	}
 }
 

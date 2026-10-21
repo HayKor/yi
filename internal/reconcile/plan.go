@@ -100,8 +100,9 @@ func PlanPull(in Input) Plan {
 		if to != card.Status {
 			changes = append(changes, MoveCard{Card: card, From: card.Status, To: to})
 		}
-		if notes.Sanitize(remote.Title) != notes.Sanitize(card.Title) {
-			changes = append(changes, RenameLocal{Card: card, ID: id, From: card.Title, To: remote.Title})
+		local := localTitle(card)
+		if notes.Sanitize(remote.Title) != notes.Sanitize(local) {
+			changes = append(changes, RenameLocal{Card: card, ID: id, From: local, To: remote.Title})
 		}
 		if in.Cfg.Notes == config.NotesAlways && !in.HasNote(card) {
 			changes = append(changes, LinkNote{Card: card, ID: id, Title: remote.Title})
@@ -148,7 +149,7 @@ func PlanPush(in Input) Plan {
 			}
 			changes = append(changes, CreateIssue{
 				Card:     card,
-				Title:    card.Title,
+				Title:    localTitle(card),
 				Status:   card.Status,
 				WithNote: in.Cfg.Notes == config.NotesAlways,
 			})
@@ -172,8 +173,9 @@ func PlanPush(in Input) Plan {
 		if upd, ok := RemoteUpdateFor(in.Cfg, remote, card.Status); ok {
 			changes = append(changes, SetStatus{ID: id, From: from, To: card.Status, Update: upd})
 		}
-		if notes.Sanitize(remote.Title) != notes.Sanitize(card.Title) {
-			changes = append(changes, RenameRemote{ID: id, From: remote.Title, To: card.Title})
+		local := localTitle(card)
+		if notes.Sanitize(remote.Title) != notes.Sanitize(local) {
+			changes = append(changes, RenameRemote{ID: id, From: remote.Title, To: local})
 		}
 	}
 

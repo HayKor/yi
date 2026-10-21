@@ -67,7 +67,7 @@ func Status(in Input) ([]Row, []string) {
 		to, warns := in.Cfg.StatusOf(remote)
 		warn.add(warns...)
 
-		titleDiff := notes.Sanitize(remote.Title) != notes.Sanitize(card.Title)
+		titleDiff := notes.Sanitize(remote.Title) != notes.Sanitize(localTitle(card))
 		kind := RowOK
 		if to != card.Status || titleDiff {
 			kind = RowDiff
