@@ -346,20 +346,7 @@ func TestSetLinkWithoutLinkErrors(t *testing.T) {
 	}
 }
 
-func TestRewriteFirstLineRejectsNonCardLine(t *testing.T) {
-	data := readTestdata(t, "plugin.md")
-	b, err := Parse(data, testStatuses())
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-
-	card := b.Find(42)
-	if err := b.RewriteFirstLine(card, "not a card"); err == nil {
-		t.Fatal("RewriteFirstLine: want error for a non-card line, got nil")
-	}
-}
-
-func TestRewriteFirstLineReparsesFields(t *testing.T) {
+func TestSetTitleReparsesFields(t *testing.T) {
 	data := readTestdata(t, "plugin.md")
 	b, err := Parse(data, testStatuses())
 	if err != nil {
@@ -367,8 +354,8 @@ func TestRewriteFirstLineReparsesFields(t *testing.T) {
 	}
 
 	card := b.Cards()[0]
-	if err := b.RewriteFirstLine(card, FormatCard(false, "Renamed", "", 0)); err != nil {
-		t.Fatalf("RewriteFirstLine: %v", err)
+	if err := b.SetTitle(card, "Renamed"); err != nil {
+		t.Fatalf("SetTitle: %v", err)
 	}
 	if card.Title != "Renamed" {
 		t.Errorf("Title = %q, want %q", card.Title, "Renamed")
@@ -432,9 +419,8 @@ func TestAddRejectsMultilineLine(t *testing.T) {
 	}
 }
 
-// TestRewriteFirstLineRejectsMultilineLine is the same check for
-// RewriteFirstLine.
-func TestRewriteFirstLineRejectsMultilineLine(t *testing.T) {
+// TestSetTitleRejectsMultilineLine is the same check for SetTitle.
+func TestSetTitleRejectsMultilineLine(t *testing.T) {
 	data := readTestdata(t, "plugin.md")
 	b, err := Parse(data, testStatuses())
 	if err != nil {
@@ -444,13 +430,13 @@ func TestRewriteFirstLineRejectsMultilineLine(t *testing.T) {
 	card := b.Find(42)
 	original := card.lines[0]
 
-	err = b.RewriteFirstLine(card, "- [ ] x\n- [ ] y `#7`")
+	err = b.SetTitle(card, "x\n- [ ] y `#7`")
 	if err == nil {
-		t.Fatal("RewriteFirstLine: want error for a line containing '\\n', got nil")
+		t.Fatal("SetTitle: want error for text containing '\\n', got nil")
 	}
-	wantMsg := "card line must be a single line: \"- [ ] x\\n- [ ] y `#7`\""
+	wantMsg := "card title must be a single line: \"x\\n- [ ] y `#7`\""
 	if err.Error() != wantMsg {
-		t.Errorf("RewriteFirstLine error = %q, want %q", err.Error(), wantMsg)
+		t.Errorf("SetTitle error = %q, want %q", err.Error(), wantMsg)
 	}
 	if card.lines[0] != original {
 		t.Errorf("card line changed despite the rejected rewrite: %q, want %q", card.lines[0], original)
@@ -525,4 +511,37 @@ func TestMoveToSameStatusIsNoOp(t *testing.T) {
 	if card.Status != "backlog" {
 		t.Errorf("Status = %q, want %q", card.Status, "backlog")
 	}
+}
+
+// --- Final review I1: lanes the plugin marks complete ---
+
+func TestMoveIntoEmptyCompleteLane(t *testing.T) {
+	b, err := Parse(readTestdata(t, "plugin-complete.md"), completeStatuses())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if err := b.Move(b.Find(4), "done"); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	goldenCompare(t, "move_complete_empty.golden.md", b.Bytes())
+
+	// The moved card must be parsed back into the lane, after the marker.
+	b2, err := Parse(b.Bytes(), completeStatuses())
+	if err != nil {
+		t.Fatalf("re-Parse: %v", err)
+	}
+	if c := b2.Find(4); c == nil || c.Status != "done" || !c.Checked {
+		t.Errorf("re-parsed #4 = %+v, want checked card in done", c)
+	}
+}
+
+func TestAddToNonEmptyCompleteLane(t *testing.T) {
+	b, err := Parse(readTestdata(t, "plugin-complete.md"), completeStatuses())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if _, err := b.Add("shipped", "- [x] New release `#9`"); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	goldenCompare(t, "add_complete_nonempty.golden.md", b.Bytes())
 }

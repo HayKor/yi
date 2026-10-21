@@ -107,3 +107,46 @@ func TestWriteFileAtomicMissingTarget(t *testing.T) {
 		t.Fatal("WriteFileAtomic: want error when the target file doesn't exist, got nil")
 	}
 }
+
+// TestWriteFileAtomicFollowsSymlink checks that writing through a
+// symlinked Kanban.md replaces the real file and leaves the link in
+// place (final review M7).
+func TestWriteFileAtomicFollowsSymlink(t *testing.T) {
+	realDir := t.TempDir()
+	realPath := filepath.Join(realDir, "Board.md")
+	if err := os.WriteFile(realPath, []byte("## Backlog\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	linkDir := t.TempDir()
+	linkPath := filepath.Join(linkDir, "Kanban.md")
+	if err := os.Symlink(realPath, linkPath); err != nil {
+		t.Skipf("symlinks unsupported: %v", err)
+	}
+
+	_, hash, err := ReadFile(linkPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if err := WriteFileAtomic(linkPath, []byte("## Todo\n"), hash); err != nil {
+		t.Fatalf("WriteFileAtomic: %v", err)
+	}
+
+	info, err := os.Lstat(linkPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("Kanban.md is no longer a symlink (mode %v)", info.Mode())
+	}
+	got, err := os.ReadFile(realPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "## Todo\n" {
+		t.Errorf("real file = %q, want %q", got, "## Todo\n")
+	}
+	entries, _ := os.ReadDir(linkDir)
+	if len(entries) != 1 {
+		t.Errorf("link dir has %d entries, want only the symlink", len(entries))
+	}
+}

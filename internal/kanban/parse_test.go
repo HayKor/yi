@@ -335,3 +335,50 @@ func TestEOLDetected(t *testing.T) {
 		t.Errorf("EOL() = %q, want %q", got, "\n")
 	}
 }
+
+// completeStatuses matches testdata/plugin-complete.md: "Done" and
+// "Shipped" are lanes the plugin marks complete ("**Complete**").
+func completeStatuses() []domain.Status {
+	return []domain.Status{
+		{Key: "backlog", Heading: "Backlog"},
+		{Key: "in-progress", Heading: "In Progress"},
+		{Key: "done", Heading: "Done", CloseIssue: true},
+		{Key: "shipped", Heading: "Shipped"},
+	}
+}
+
+func TestRoundTripPluginComplete(t *testing.T) {
+	data := readTestdata(t, "plugin-complete.md")
+	b, err := Parse(data, completeStatuses())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := b.Bytes(); !bytes.Equal(got, data) {
+		t.Errorf("round trip mismatch:\n%s", got)
+	}
+}
+
+// TestWIPLimitHeadingMatchesStatus checks that a lane with a max-items
+// limit ("## In Progress (3)") still maps to its configured status,
+// and that its heading line is kept byte-for-byte (final review I2).
+func TestWIPLimitHeadingMatchesStatus(t *testing.T) {
+	data := readTestdata(t, "plugin-complete.md")
+	b, err := Parse(data, completeStatuses())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	card := b.Find(5)
+	if card == nil {
+		t.Fatal("Find(5) = nil: the WIP-limited lane was treated as opaque")
+	}
+	if card.Status != "in-progress" {
+		t.Errorf("Status = %q, want in-progress", card.Status)
+	}
+	if err := b.Move(b.Find(3), "in-progress"); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	out := string(b.Bytes())
+	if strings.Count(out, "## In Progress") != 1 || !strings.Contains(out, "## In Progress (3)\n\n- [ ] Doing it `#5`\n- [ ] Plain task `#3`\n") {
+		t.Errorf("Move into the WIP lane = %q", out)
+	}
+}

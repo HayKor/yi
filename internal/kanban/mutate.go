@@ -39,7 +39,7 @@ func FormatCard(checked bool, title, link string, id int) string {
 }
 
 // refreshFields re-derives a card's exported fields other than Status
-// and Line (Checked, IssueID, Title, Link) from lines[0], using Task
+// and Line (Checked, IssueID, Title, Link, Meta) from lines[0], using Task
 // 4's first-line parser. Every mutator that edits lines[0] calls this
 // afterward so the fields never drift from the text they're
 // supposedly describing.
@@ -48,6 +48,7 @@ func refreshFields(c *Card) {
 	c.IssueID = 0
 	c.Title = ""
 	c.Link = ""
+	c.Meta = nil
 	parseCardFirstLine(stripEOL(c.lines[0]), c)
 }
 
@@ -65,8 +66,8 @@ func hasEOL(line string) bool {
 }
 
 // isSingleLine reports whether s contains no line break of its own.
-// Add and RewriteFirstLine take a bare line (no EOL) to place verbatim
-// as a card's first line; without this check, a caller-supplied "\n"
+// Add and SetTitle take a bare line (no EOL) to place verbatim as (part
+// of) a card's first line; without this check, a caller-supplied "\n"
 // or "\r" would smuggle extra lines (even extra cards) into the board
 // instead of the one line the caller asked for.
 func isSingleLine(s string) bool {
@@ -122,7 +123,7 @@ func (b *Board) SetIssueID(c *Card, id int) error {
 // no link to update.
 func (b *Board) SetLink(c *Card, target string) error {
 	content, eol := splitEOL(c.lines[0])
-	loc := linkRe.FindStringSubmatchIndex(content)
+	loc := findLink(content)
 	if c.Link == "" || loc == nil {
 		return fmt.Errorf("card has no link to update: %q", content)
 	}
@@ -141,11 +142,43 @@ func (b *Board) SetLink(c *Card, target string) error {
 	return nil
 }
 
+// SetTitle rebuilds c's first line as "- [<box>] <text>", followed by
+// the card's metadata tokens (dates, times, tags — Card.Meta) in their
+// original order and then its "`#id`" token, if it has one. The
+// checkbox character and continuation lines are kept as they were.
+// text is the card's new visible text: a plain title or a
+// "[[target]]" link. Unlike SetChecked/SetIssueID/SetLink (surgical
+// edits), SetTitle replaces whatever else was on the line, so it is
+// meant for link-less cards, whose first line is exactly title +
+// metadata + id: a plain card gaining a note, or a plain card being
+// renamed. text must be a single line (no '\r' or '\n').
+func (b *Board) SetTitle(c *Card, text string) error {
+	if !isSingleLine(text) {
+		return fmt.Errorf("card title must be a single line: %q", text)
+	}
+	content, eol := splitEOL(c.lines[0])
+	loc := cardStartRe.FindStringSubmatchIndex(content)
+
+	var sb strings.Builder
+	sb.WriteString(content[:loc[1]]) // "- [<box>] "
+	sb.WriteString(text)
+	for _, m := range c.Meta {
+		sb.WriteString(" ")
+		sb.WriteString(m)
+	}
+	if c.IssueID > 0 {
+		sb.WriteString(" `#")
+		sb.WriteString(strconv.Itoa(c.IssueID))
+		sb.WriteString("`")
+	}
+	c.lines[0] = sb.String() + eol
+	refreshFields(c)
+	return nil
+}
+
 // RewriteFirstLine replaces c's first line wholesale and re-parses its
-// fields. Unlike SetChecked/SetIssueID/SetLink (surgical edits),
-// RewriteFirstLine is for changes to the card's structure itself: a
-// plain card gaining a note, or a card being renamed. line must be a
-// single line (no '\r' or '\n') that parses as a card.
+// fields. Deprecated: it drops the card's metadata (dates, tags); use
+// SetTitle. Kept only until reconcile stops calling it.
 func (b *Board) RewriteFirstLine(c *Card, line string) error {
 	if !isSingleLine(line) {
 		return fmt.Errorf("card line must be a single line: %q", line)
@@ -317,9 +350,11 @@ func ensureItemEOL(it item, eol string) {
 }
 
 // insertCardInSection inserts card into an existing section, per
-// §6.2's insertion point: after the section's last card if it has one,
-// otherwise after the first blank line following the heading (adding
-// one right after the heading if there is none).
+// §6.2's insertion point: after the section's last card if it has one;
+// otherwise directly below the last non-blank line of the section's
+// leading text (the plugin's "**Complete**" marker), or, if that text
+// is all blank, after the first blank line following the heading
+// (adding one right after the heading if there is none).
 func insertCardInSection(sec *section, card *Card, eol string) {
 	lastCardIdx := -1
 	for i, it := range sec.items {
@@ -333,19 +368,33 @@ func insertCardInSection(sec *section, card *Card, eol string) {
 		return
 	}
 
-	// No cards yet: insert right after the first blank line following
-	// the heading, if there is one.
+	// No cards yet. If the section's leading raw block has text in it
+	// — the plugin's "**Complete**" marker on a lane it marks complete
+	// — the card goes directly below its last non-blank line, as the
+	// plugin writes items under the marker. Otherwise it goes right
+	// after the first blank line following the heading, if there is one.
 	if len(sec.items) > 0 && sec.items[0].card == nil {
 		lines := sec.items[0].raw
+		at := -1
 		for i, l := range lines {
 			if stripEOL(l) != "" {
-				continue
+				at = i
 			}
-			before := append([]string{}, lines[:i+1]...)
+		}
+		if at < 0 {
+			for i, l := range lines {
+				if stripEOL(l) == "" {
+					at = i
+					break
+				}
+			}
+		}
+		if at >= 0 {
+			before := append([]string{}, lines[:at+1]...)
 			if n := len(before); n > 0 && !hasEOL(before[n-1]) {
 				before[n-1] += eol
 			}
-			after := lines[i+1:]
+			after := lines[at+1:]
 
 			newItems := make([]item, 0, len(sec.items)+2)
 			newItems = append(newItems, item{raw: before})

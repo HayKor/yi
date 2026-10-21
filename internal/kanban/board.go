@@ -72,8 +72,9 @@ func (e *DuplicateError) Error() string {
 }
 
 // Parse reads a Kanban.md file. statuses is the project's configured
-// columns; a "## " heading matches a status when its trimmed text is a
-// case-insensitive match for status.Heading. Headings that match nothing
+// columns; a "## " heading matches a status when the two are equal
+// under domain.NormalizeHeading (trimmed, case-insensitive, ignoring a
+// WIP-limit suffix such as "In Progress (3)"). Headings that match nothing
 // are opaque sections: their content, including any card-shaped lines,
 // is preserved but not parsed.
 //
@@ -183,11 +184,12 @@ func checkDuplicates(b *Board) error {
 
 // matchStatus returns the StatusKey of the configured status whose
 // heading matches headingLineContent (a "## ..." line with its EOL
-// stripped), or "" if none matches.
+// stripped) under domain.NormalizeHeading — trimmed, case-insensitive,
+// ignoring a WIP-limit suffix like " (3)" — or "" if none matches.
 func matchStatus(headingLineContent string, statuses []domain.Status) domain.StatusKey {
-	h := strings.TrimPrefix(headingLineContent, "## ")
+	h := domain.NormalizeHeading(strings.TrimPrefix(headingLineContent, "## "))
 	for _, st := range statuses {
-		if strings.EqualFold(strings.TrimSpace(h), strings.TrimSpace(st.Heading)) {
+		if h == domain.NormalizeHeading(st.Heading) {
 			return st.Key
 		}
 	}

@@ -37,8 +37,13 @@ func ReadFile(path string) ([]byte, [32]byte, error) {
 // ErrModified, leaving path untouched.
 //
 // path must already exist; yi never creates Kanban.md, so a missing
-// path is an error.
+// path is an error. If path is a symlink, the file it points to is
+// replaced and the link itself is left in place.
 func WriteFileAtomic(path string, data []byte, expect [32]byte) error {
+	path, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return err
