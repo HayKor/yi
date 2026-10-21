@@ -29,7 +29,7 @@ func TestResolveToken(t *testing.T) {
 			}
 			return ""
 		}
-		got, err := resolveToken(ctx, getenv, noLookPath, noRun)
+		got, err := resolveToken(ctx, "", getenv, noLookPath, noRun)
 		if err != nil {
 			t.Fatalf("resolveToken() error = %v, want nil", err)
 		}
@@ -45,7 +45,7 @@ func TestResolveToken(t *testing.T) {
 			}
 			return ""
 		}
-		got, err := resolveToken(ctx, getenv, noLookPath, noRun)
+		got, err := resolveToken(ctx, "", getenv, noLookPath, noRun)
 		if err != nil {
 			t.Fatalf("resolveToken() error = %v, want nil", err)
 		}
@@ -68,7 +68,7 @@ func TestResolveToken(t *testing.T) {
 			}
 			return []byte("c\n"), nil
 		}
-		got, err := resolveToken(ctx, getenv, lookPath, run)
+		got, err := resolveToken(ctx, "", getenv, lookPath, run)
 		if err != nil {
 			t.Fatalf("resolveToken() error = %v, want nil", err)
 		}
@@ -79,7 +79,7 @@ func TestResolveToken(t *testing.T) {
 
 	t.Run("no env, no gh: ErrAuth with hints", func(t *testing.T) {
 		getenv := func(string) string { return "" }
-		_, err := resolveToken(ctx, getenv, noLookPath, noRun)
+		_, err := resolveToken(ctx, "", getenv, noLookPath, noRun)
 		if !errors.Is(err, provider.ErrAuth) {
 			t.Fatalf("resolveToken() error = %v, want wrapping ErrAuth", err)
 		}
@@ -97,7 +97,7 @@ func TestResolveToken(t *testing.T) {
 		run := func(context.Context, string, ...string) ([]byte, error) {
 			return nil, errors.New("not logged in")
 		}
-		_, err := resolveToken(ctx, getenv, lookPath, run)
+		_, err := resolveToken(ctx, "", getenv, lookPath, run)
 		if !errors.Is(err, provider.ErrAuth) {
 			t.Fatalf("resolveToken() error = %v, want wrapping ErrAuth", err)
 		}
@@ -109,9 +109,54 @@ func TestResolveToken(t *testing.T) {
 		run := func(context.Context, string, ...string) ([]byte, error) {
 			return []byte("  \n"), nil
 		}
-		_, err := resolveToken(ctx, getenv, lookPath, run)
+		_, err := resolveToken(ctx, "", getenv, lookPath, run)
 		if !errors.Is(err, provider.ErrAuth) {
 			t.Fatalf("resolveToken() error = %v, want wrapping ErrAuth", err)
 		}
 	})
+
+	t.Run("GitHub Enterprise: gh auth token --hostname <host>", func(t *testing.T) {
+		getenv := func(string) string { return "" }
+		lookPath := func(string) (string, error) { return "/usr/bin/gh", nil }
+		var gotArgs []string
+		run := func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			gotArgs = args
+			return []byte("ghe-token\n"), nil
+		}
+		got, err := resolveToken(ctx, "github.example.com", getenv, lookPath, run)
+		if err != nil {
+			t.Fatalf("resolveToken() error = %v, want nil", err)
+		}
+		if got != "ghe-token" {
+			t.Errorf("resolveToken() = %q, want %q", got, "ghe-token")
+		}
+		want := []string{"auth", "token", "--hostname", "github.example.com"}
+		if strings.Join(gotArgs, " ") != strings.Join(want, " ") {
+			t.Errorf("gh args = %v, want %v", gotArgs, want)
+		}
+	})
+}
+
+func TestTokenHost(t *testing.T) {
+	cases := map[string]string{
+		"":                                   "",
+		"https://github.example.com/api/v3/": "github.example.com",
+		"https://ghe.internal:8443/api/v3":   "ghe.internal:8443",
+		"http://127.0.0.1:1234/":             "127.0.0.1:1234",
+	}
+	for in, want := range cases {
+		got, err := tokenHost(in)
+		if err != nil {
+			t.Errorf("tokenHost(%q) error = %v", in, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("tokenHost(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for _, bad := range []string{"not a url", "/api/v3/", "::"} {
+		if _, err := tokenHost(bad); err == nil {
+			t.Errorf("tokenHost(%q): want error, got nil", bad)
+		}
+	}
 }

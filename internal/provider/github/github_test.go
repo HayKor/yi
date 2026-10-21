@@ -57,6 +57,28 @@ func TestListFiltersPullRequests(t *testing.T) {
 	}
 }
 
+// TestGetIssueRejectsPullRequest checks that GetIssue treats a pull
+// request number as not found (final review M1): yi must never
+// relabel or close a PR because its number appears on the board.
+func TestGetIssueRejectsPullRequest(t *testing.T) {
+	fake := newFakeGitHub(testOwner, testRepo)
+	defer fake.Close()
+	fake.Seed(&fakeIssue{Number: 3, Title: "a pull request", State: "open", UpdatedAt: time.Now(), PullRequest: &fakePullRequest{URL: "https://example/pulls/3"}})
+
+	p, err := newWithClient(fake.Client(), fake.URL()+"/", testOwner+"/"+testRepo)
+	if err != nil {
+		t.Fatalf("newWithClient() error = %v", err)
+	}
+
+	_, err = p.GetIssue(context.Background(), 3)
+	if !errors.Is(err, provider.ErrNotFound) {
+		t.Fatalf("GetIssue(PR #3) error = %v, want wrapping ErrNotFound", err)
+	}
+	if !strings.Contains(err.Error(), "pull request") {
+		t.Errorf("GetIssue(PR #3) error = %q, want it to say it's a pull request", err.Error())
+	}
+}
+
 func TestListPaginates(t *testing.T) {
 	fake := newFakeGitHub(testOwner, testRepo)
 	defer fake.Close()

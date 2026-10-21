@@ -88,7 +88,11 @@ func New(ctx context.Context, cfg provider.Config) (provider.IssueProvider, erro
 		return nil, err
 	}
 
-	token, err := resolveToken(ctx, os.Getenv, exec.LookPath, runCommand)
+	host, err := tokenHost(opts.BaseURL)
+	if err != nil {
+		return nil, err
+	}
+	token, err := resolveToken(ctx, host, os.Getenv, exec.LookPath, runCommand)
 	if err != nil {
 		return nil, err
 	}
@@ -162,11 +166,18 @@ func (p *Provider) ListOpenIssues(ctx context.Context) ([]domain.Issue, error) {
 	return all, nil
 }
 
-// GetIssue returns the issue with id, in any state.
+// GetIssue returns the issue with id, in any state. GitHub serves pull
+// requests from the same endpoint; one is reported as not found (an
+// error wrapping provider.ErrNotFound), so yi never relabels or closes
+// a PR whose number happens to be on the board.
 func (p *Provider) GetIssue(ctx context.Context, id int) (domain.Issue, error) {
+	op := fmt.Sprintf("get issue #%d", id)
 	iss, resp, err := p.client.Issues.Get(ctx, p.owner, p.repo, id)
 	if err != nil {
-		return domain.Issue{}, mapErr(fmt.Sprintf("get issue #%d", id), resp, err)
+		return domain.Issue{}, mapErr(op, resp, err)
+	}
+	if iss.PullRequestLinks != nil {
+		return domain.Issue{}, fmt.Errorf("github: %s: #%d is a pull request: %w", op, id, provider.ErrNotFound)
 	}
 	return toDomainIssue(iss), nil
 }
