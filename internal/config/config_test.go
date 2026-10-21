@@ -208,6 +208,16 @@ func TestValidationErrors(t *testing.T) {
 			wantSub: `duplicate label "status:backlog"`,
 		},
 		{
+			name:    "missing heading",
+			yaml:    strings.Replace(fullExampleYAML, "    heading: Todo\n", "", 1),
+			wantSub: `statuses.todo: heading is required`,
+		},
+		{
+			name:    "missing label",
+			yaml:    strings.Replace(fullExampleYAML, "    label: status:todo\n", "", 1),
+			wantSub: `statuses.todo: label is required`,
+		},
+		{
 			name:    "unknown defaultStatus",
 			yaml:    strings.Replace(fullExampleYAML, "defaultStatus: backlog\n", "defaultStatus: nope\n", 1),
 			wantSub: `defaultStatus: unknown status "nope"`,
@@ -257,6 +267,39 @@ func TestValidationErrors(t *testing.T) {
 		}
 		if len(ve.Problems) != 2 {
 			t.Fatalf("len(Problems) = %d, want 2 (got %v)", len(ve.Problems), ve.Problems)
+		}
+	})
+
+	t.Run("two missing labels collect two required problems, not a duplicate", func(t *testing.T) {
+		yamlContent := strings.Replace(fullExampleYAML, "    label: status:todo\n", "", 1)
+		yamlContent = strings.Replace(yamlContent, "    label: status:in-progress\n", "", 1)
+		path, _ := writeConfig(t, yamlContent)
+
+		_, err := Load(path)
+		if err == nil {
+			t.Fatalf("Load() error = nil, want error")
+		}
+		var ve *ValidationError
+		if !errors.As(err, &ve) {
+			t.Fatalf("Load() error is not *ValidationError: %v", err)
+		}
+
+		wantProblems := []string{
+			"statuses.todo: label is required",
+			"statuses.in-progress: label is required",
+		}
+		if len(ve.Problems) != len(wantProblems) {
+			t.Fatalf("Problems = %v, want %v", ve.Problems, wantProblems)
+		}
+		for i, want := range wantProblems {
+			if ve.Problems[i] != want {
+				t.Errorf("Problems[%d] = %q, want %q", i, ve.Problems[i], want)
+			}
+		}
+		for _, p := range ve.Problems {
+			if strings.Contains(p, "duplicate label") {
+				t.Errorf("Problems unexpectedly contains a duplicate-label problem: %q", p)
+			}
 		}
 	})
 }

@@ -41,15 +41,21 @@ func validate(cfg *Config, raw rawConfig) error {
 		seenLabels := map[string]bool{}
 		closeCount := 0
 		for _, s := range cfg.Statuses {
-			if seenHeadings[s.Heading] {
+			if s.Heading == "" {
+				problems = append(problems, fmt.Sprintf("statuses.%s: heading is required", s.Key))
+			} else if seenHeadings[s.Heading] {
 				problems = append(problems, fmt.Sprintf("duplicate heading %q", s.Heading))
+			} else {
+				seenHeadings[s.Heading] = true
 			}
-			seenHeadings[s.Heading] = true
 
-			if seenLabels[s.Label] {
+			if s.Label == "" {
+				problems = append(problems, fmt.Sprintf("statuses.%s: label is required", s.Key))
+			} else if seenLabels[s.Label] {
 				problems = append(problems, fmt.Sprintf("duplicate label %q", s.Label))
+			} else {
+				seenLabels[s.Label] = true
 			}
-			seenLabels[s.Label] = true
 
 			if s.CloseIssue {
 				closeCount++

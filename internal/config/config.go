@@ -320,13 +320,11 @@ func (c *Config) CloseStatus() domain.Status {
 }
 
 // StatusLabels returns the labels of all configured statuses, in config
-// order.
+// order. Validation guarantees every status has a non-empty label.
 func (c *Config) StatusLabels() []string {
 	labels := make([]string, 0, len(c.Statuses))
 	for _, s := range c.Statuses {
-		if s.Label != "" {
-			labels = append(labels, s.Label)
-		}
+		labels = append(labels, s.Label)
 	}
 	return labels
 }
@@ -346,7 +344,7 @@ func (c *Config) StatusOf(issue domain.Issue) (domain.StatusKey, []string) {
 
 	var matched []domain.Status
 	for _, s := range c.Statuses {
-		if s.Label != "" && issue.HasLabel(s.Label) {
+		if issue.HasLabel(s.Label) {
 			matched = append(matched, s)
 		}
 	}
