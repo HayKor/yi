@@ -296,18 +296,6 @@ func (c *Config) Status(k domain.StatusKey) (domain.Status, bool) {
 	return domain.Status{}, false
 }
 
-// StatusByHeading looks up a status by its kanban column heading,
-// ignoring leading/trailing whitespace and case.
-func (c *Config) StatusByHeading(heading string) (domain.Status, bool) {
-	heading = strings.TrimSpace(heading)
-	for _, s := range c.Statuses {
-		if strings.EqualFold(strings.TrimSpace(s.Heading), heading) {
-			return s, true
-		}
-	}
-	return domain.Status{}, false
-}
-
 // CloseStatus returns the status with CloseIssue set, i.e. the one a
 // closed issue maps to. Validation guarantees exactly one exists.
 func (c *Config) CloseStatus() domain.Status {

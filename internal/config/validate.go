@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"kanban-sync/internal/branch"
+	"kanban-sync/internal/domain"
 )
 
 // ValidationError reports every problem found while validating a
@@ -43,18 +44,21 @@ func validate(cfg *Config, raw rawConfig) error {
 		for _, s := range cfg.Statuses {
 			if s.Heading == "" {
 				problems = append(problems, fmt.Sprintf("statuses.%s: heading is required", s.Key))
-			} else if seenHeadings[s.Heading] {
+			} else if h := domain.NormalizeHeading(s.Heading); seenHeadings[h] {
+				// Same rule the board uses to match lanes: two
+				// headings that normalise alike would map to one lane.
 				problems = append(problems, fmt.Sprintf("duplicate heading %q", s.Heading))
 			} else {
-				seenHeadings[s.Heading] = true
+				seenHeadings[h] = true
 			}
 
 			if s.Label == "" {
 				problems = append(problems, fmt.Sprintf("statuses.%s: label is required", s.Key))
-			} else if seenLabels[s.Label] {
+			} else if l := strings.ToLower(s.Label); seenLabels[l] {
+				// Label names are case-insensitive (domain.Issue.HasLabel).
 				problems = append(problems, fmt.Sprintf("duplicate label %q", s.Label))
 			} else {
-				seenLabels[s.Label] = true
+				seenLabels[l] = true
 			}
 
 			if s.CloseIssue {
@@ -89,6 +93,9 @@ func validate(cfg *Config, raw rawConfig) error {
 	}
 
 	if raw.Git != nil {
+		if raw.Git.Repository == "" {
+			problems = append(problems, "git.repository is required")
+		}
 		tmpl := raw.Git.Branches.Template
 		if tmpl == "" {
 			tmpl = branch.DefaultTemplate

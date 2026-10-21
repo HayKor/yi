@@ -208,6 +208,29 @@ func TestValidationErrors(t *testing.T) {
 			wantSub: `duplicate label "status:backlog"`,
 		},
 		{
+			// Board lanes match headings case-insensitively, so these
+			// two would map to the same lane (final review I3).
+			name:    "duplicate heading differing only in case",
+			yaml:    strings.Replace(fullExampleYAML, "heading: Todo\n", "heading: backlog\n", 1),
+			wantSub: `duplicate heading "backlog"`,
+		},
+		{
+			name:    "duplicate heading differing only in WIP limit",
+			yaml:    strings.Replace(fullExampleYAML, "heading: Todo\n", "heading: \" Backlog (3)\"\n", 1),
+			wantSub: `duplicate heading " Backlog (3)"`,
+		},
+		{
+			// GitHub label names are case-insensitive (final review M2).
+			name:    "duplicate label differing only in case",
+			yaml:    strings.Replace(fullExampleYAML, "label: status:todo\n", "label: Status:Backlog\n", 1),
+			wantSub: `duplicate label "Status:Backlog"`,
+		},
+		{
+			name:    "git section without repository",
+			yaml:    strings.Replace(fullExampleYAML, "  repository: ~/Projects/yandex-ads\n", "", 1),
+			wantSub: "git.repository is required",
+		},
+		{
 			name:    "missing heading",
 			yaml:    strings.Replace(fullExampleYAML, "    heading: Todo\n", "", 1),
 			wantSub: `statuses.todo: heading is required`,
@@ -328,6 +351,11 @@ func TestStatusOf(t *testing.T) {
 			wantKey: "todo",
 		},
 		{
+			name:    "open with a status label spelled in another case",
+			issue:   domain.Issue{ID: 2, State: domain.IssueOpen, Labels: []string{"Status:Todo"}},
+			wantKey: "todo",
+		},
+		{
 			name:    "open with no status label",
 			issue:   domain.Issue{ID: 3, State: domain.IssueOpen, Labels: nil},
 			wantKey: "backlog",
@@ -362,25 +390,5 @@ func TestStatusOf(t *testing.T) {
 				t.Errorf("warnings = %v, want none", warnings)
 			}
 		})
-	}
-}
-
-func TestStatusByHeading(t *testing.T) {
-	path, _ := writeConfig(t, fullExampleYAML)
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-
-	st, ok := cfg.StatusByHeading(" in progress ")
-	if !ok {
-		t.Fatalf("StatusByHeading(%q) not found", " in progress ")
-	}
-	if st.Key != "in-progress" {
-		t.Errorf("StatusByHeading() key = %q, want in-progress", st.Key)
-	}
-
-	if _, ok := cfg.StatusByHeading("Nope"); ok {
-		t.Errorf("StatusByHeading(%q) found, want not found", "Nope")
 	}
 }
