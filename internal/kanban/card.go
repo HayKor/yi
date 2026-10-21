@@ -16,7 +16,13 @@ type Card struct {
 	Title   string
 	Link    string // note target ("Tasks/42 Yandex OAuth"), "" if the card has no [[link]]
 	Checked bool
-	Line    int // 1-based line number of the card's first line in the source
+
+	// Line is the 1-based line number of the card's first line in the
+	// file Parse read it from, for use in error messages. Task 5's
+	// Move and RewriteFirstLine relocate or rewrite the card without
+	// updating it, so it can go stale; it is 0 for a card created by
+	// Add, which was never parsed from a line.
+	Line int
 
 	lines []string // first line + continuation lines, each with its original EOL
 }

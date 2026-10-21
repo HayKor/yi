@@ -53,6 +53,7 @@ type Board struct {
 	sections []*section
 	trailer  []string // lines from the plugin's "***" / "%% kanban:settings" marker to EOF
 	eol      string
+	statuses []domain.Status // the project's configured columns, in config order (Task 5: mutations need headings/order/CloseIssue)
 }
 
 // DuplicateError reports that the same issue id appears on more than one
@@ -80,7 +81,7 @@ func (e *DuplicateError) Error() string {
 // on more than one card in a configured section.
 func Parse(data []byte, statuses []domain.Status) (*Board, error) {
 	lines := splitLines(data)
-	b := &Board{eol: detectEOL(lines)}
+	b := &Board{eol: detectEOL(lines), statuses: statuses}
 
 	i := 0
 	for i < len(lines) {
