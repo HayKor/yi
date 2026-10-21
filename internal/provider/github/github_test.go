@@ -122,6 +122,23 @@ func TestRepositoryFormat(t *testing.T) {
 	}
 }
 
+// yamlOptionsNode builds the yaml.Node New() would receive as
+// cfg.Options for the given "github:" options section body, matching
+// the shape config.go hands providers (a bare mapping node, document
+// wrapper unwrapped).
+func yamlOptionsNode(t *testing.T, body string) yaml.Node {
+	t.Helper()
+
+	var node yaml.Node
+	if err := yaml.Unmarshal([]byte(body), &node); err != nil {
+		t.Fatalf("yaml.Unmarshal() error = %v", err)
+	}
+	if node.Kind == yaml.DocumentNode {
+		node = *node.Content[0]
+	}
+	return node
+}
+
 func TestBaseURLOption(t *testing.T) {
 	fake := newFakeGitHub(testOwner, testRepo)
 	defer fake.Close()
@@ -129,19 +146,10 @@ func TestBaseURLOption(t *testing.T) {
 
 	t.Setenv("GITHUB_TOKEN", "test")
 
-	var node yaml.Node
-	if err := yaml.Unmarshal([]byte("baseUrl: "+fake.URL()+"\n"), &node); err != nil {
-		t.Fatalf("yaml.Unmarshal() error = %v", err)
-	}
-	// Unwrap the document node, same shape config.go hands providers.
-	if node.Kind == yaml.DocumentNode {
-		node = *node.Content[0]
-	}
-
 	p, err := New(context.Background(), provider.Config{
 		Name:       "github",
 		Repository: testOwner + "/" + testRepo,
-		Options:    node,
+		Options:    yamlOptionsNode(t, "baseUrl: "+fake.URL()+"\n"),
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -160,6 +168,60 @@ func TestBaseURLOption(t *testing.T) {
 	path := "/api/v3/repos/" + testOwner + "/" + testRepo + "/issues"
 	if n := fake.RawRequestCount(path); n == 0 {
 		t.Errorf("fake server saw no requests at %q, want at least one", path)
+	}
+}
+
+func TestUnknownOptionRejected(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test")
+
+	// A plausible typo: "baseURL" instead of "baseUrl". Decoding this
+	// permissively would silently leave options.BaseURL empty, so New
+	// would send the token to the public API instead of the intended
+	// Enterprise host - a security-relevant surprise, not just a
+	// shrugged-off typo.
+	_, err := New(context.Background(), provider.Config{
+		Name:       "github",
+		Repository: testOwner + "/" + testRepo,
+		Options:    yamlOptionsNode(t, "baseURL: https://github.example.com\n"),
+	})
+	if err == nil {
+		t.Fatal("New() error = nil, want error for unknown option \"baseURL\"")
+	}
+	if !strings.Contains(err.Error(), `unknown option "baseURL"`) {
+		t.Errorf("New() error = %q, want to contain %q", err.Error(), `unknown option "baseURL"`)
+	}
+	if !strings.Contains(err.Error(), "baseUrl") {
+		t.Errorf("New() error = %q, want to mention the correct key %q", err.Error(), "baseUrl")
+	}
+}
+
+func TestKnownOptionAccepted(t *testing.T) {
+	fake := newFakeGitHub(testOwner, testRepo)
+	defer fake.Close()
+	fake.Seed(&fakeIssue{Number: 1, Title: "issue one", State: "open", UpdatedAt: time.Now()})
+
+	t.Setenv("GITHUB_TOKEN", "test")
+
+	// A zero-value Options node (no "github:" section at all) must
+	// still work: decodeOptions must not require a mapping node.
+	_, err := New(context.Background(), provider.Config{
+		Name:       "github",
+		Repository: testOwner + "/" + testRepo,
+	})
+	if err != nil {
+		t.Fatalf("New() with zero Options error = %v, want nil", err)
+	}
+
+	p, err := New(context.Background(), provider.Config{
+		Name:       "github",
+		Repository: testOwner + "/" + testRepo,
+		Options:    yamlOptionsNode(t, "baseUrl: "+fake.URL()+"\n"),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v, want nil", err)
+	}
+	if _, err := p.ListOpenIssues(context.Background()); err != nil {
+		t.Fatalf("ListOpenIssues() error = %v, want nil", err)
 	}
 }
 
@@ -229,6 +291,47 @@ func TestUpdateIssueLabelsAndState(t *testing.T) {
 	}
 	if got.Title != "renamed" || got.State != domain.IssueClosed {
 		t.Errorf("UpdateIssue() = title %q state %v, want %q closed", got.Title, got.State, "renamed")
+	}
+}
+
+func TestRemoveLabelWithSpecialCharacters(t *testing.T) {
+	fake := newFakeGitHub(testOwner, testRepo)
+	defer fake.Close()
+	fake.Seed(&fakeIssue{Number: 9, Title: "t", State: "open", UpdatedAt: time.Now()})
+
+	p, err := newWithClient(fake.Client(), fake.URL()+"/", testOwner+"/"+testRepo)
+	if err != nil {
+		t.Fatalf("newWithClient() error = %v", err)
+	}
+
+	for _, label := range []string{"kind/bug", "needs#triage", "blocked?"} {
+		t.Run(label, func(t *testing.T) {
+			ctx := context.Background()
+
+			added, err := p.UpdateIssue(ctx, 9, provider.IssueUpdate{AddLabels: []string{label}})
+			if err != nil {
+				t.Fatalf("UpdateIssue(add %q) error = %v", label, err)
+			}
+			if !added.HasLabel(label) {
+				t.Fatalf("UpdateIssue(add %q) labels = %v, want to contain %q", label, added.Labels, label)
+			}
+
+			removed, err := p.UpdateIssue(ctx, 9, provider.IssueUpdate{RemoveLabels: []string{label}})
+			if err != nil {
+				t.Fatalf("UpdateIssue(remove %q) error = %v", label, err)
+			}
+			if removed.HasLabel(label) {
+				t.Fatalf("UpdateIssue(remove %q) labels = %v, want %q gone", label, removed.Labels, label)
+			}
+
+			got, err := p.GetIssue(ctx, 9)
+			if err != nil {
+				t.Fatalf("GetIssue() error = %v", err)
+			}
+			if got.HasLabel(label) {
+				t.Fatalf("GetIssue() labels = %v, want %q gone", got.Labels, label)
+			}
+		})
 	}
 }
 

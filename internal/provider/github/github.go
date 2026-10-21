@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	gh "github.com/google/go-github/v93/github"
+	"gopkg.in/yaml.v3"
 
 	"kanban-sync/internal/domain"
 	"kanban-sync/internal/provider"
@@ -40,6 +42,37 @@ type options struct {
 	BaseURL string `yaml:"baseUrl"`
 }
 
+// knownOptionKeys lists every recognized key in the "github:" options
+// section. A misspelt key (e.g. "baseURL" instead of "baseUrl") would
+// otherwise decode to a silently-empty options struct, sending the
+// token to the public API instead of the intended Enterprise host, so
+// decodeOptions rejects anything not in this list instead of ignoring
+// it. yaml.v3's Node.Decode has no equivalent of Decoder.KnownFields,
+// so the mapping's keys are checked by hand.
+var knownOptionKeys = map[string]bool{"baseUrl": true}
+
+// decodeOptions decodes node into options, per knownOptionKeys.
+func decodeOptions(node yaml.Node) (options, error) {
+	var opts options
+	if node.IsZero() {
+		return opts, nil
+	}
+
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			key := node.Content[i].Value
+			if !knownOptionKeys[key] {
+				return options{}, fmt.Errorf("github: unknown option %q (known: baseUrl)", key)
+			}
+		}
+	}
+
+	if err := node.Decode(&opts); err != nil {
+		return options{}, fmt.Errorf("github: decode options: %w", err)
+	}
+	return opts, nil
+}
+
 // New constructs a Provider from cfg. cfg.Repository must be
 // "owner/repo". The GitHub token is resolved via resolveToken and is
 // never persisted. If cfg.Options sets baseUrl, requests go to that
@@ -50,11 +83,9 @@ func New(ctx context.Context, cfg provider.Config) (provider.IssueProvider, erro
 		return nil, err
 	}
 
-	var opts options
-	if !cfg.Options.IsZero() {
-		if err := cfg.Options.Decode(&opts); err != nil {
-			return nil, fmt.Errorf("github: decode options: %w", err)
-		}
+	opts, err := decodeOptions(cfg.Options)
+	if err != nil {
+		return nil, err
 	}
 
 	token, err := resolveToken(ctx, os.Getenv, exec.LookPath, runCommand)
@@ -187,7 +218,15 @@ func (p *Provider) UpdateIssue(ctx context.Context, id int, upd provider.IssueUp
 	}
 
 	for _, label := range upd.RemoveLabels {
-		resp, err := p.client.Issues.RemoveLabelForIssue(ctx, p.owner, p.repo, id, label)
+		// go-github does not escape label for us (it's interpolated
+		// directly into the URL path - see issues_labels.go), so a
+		// label containing "/", "#" or "?" would otherwise split the
+		// path, get truncated at a fragment, or turn into a query
+		// string. url.PathEscape round-trips cleanly through
+		// Client.NewRequest (verified against v93: the escaped
+		// segment survives as the request's RawPath/EscapedPath
+		// without being re-escaped).
+		resp, err := p.client.Issues.RemoveLabelForIssue(ctx, p.owner, p.repo, id, url.PathEscape(label))
 		if err != nil && !isNotFound(resp) {
 			return domain.Issue{}, mapErr(op, resp, err)
 		}

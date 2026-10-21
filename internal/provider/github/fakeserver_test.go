@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -123,11 +124,18 @@ var issueLabelsRe = regexp.MustCompile(`^/repos/([^/]+)/([^/]+)/issues/(\d+)/lab
 var issueLabelRe = regexp.MustCompile(`^/repos/([^/]+)/([^/]+)/issues/(\d+)/labels/([^/]+)$`)
 
 func (f *fakeGitHub) handle(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/v3")
+	// Route on the escaped path, not r.URL.Path: net/http decodes
+	// percent-escapes into r.URL.Path (so "kind%2Fbug" there is
+	// indistinguishable from a literal "/"), which would silently
+	// mis-route a label containing "/", "#" or "?". EscapedPath
+	// preserves the on-the-wire encoding, so a single path segment
+	// like "kind%2Fbug" stays one segment for the regexes below.
+	escapedPath := r.URL.EscapedPath()
+	path := strings.TrimPrefix(escapedPath, "/api/v3")
 
 	f.mu.Lock()
 	f.reqCount[path]++
-	f.rawCount[r.URL.Path]++
+	f.rawCount[escapedPath]++
 	unauth := f.unauth
 	rateLimited := f.rateLimit
 	f.mu.Unlock()
@@ -175,7 +183,11 @@ func (f *fakeGitHub) handle(w http.ResponseWriter, r *http.Request) {
 	case issueLabelRe.MatchString(path):
 		m := issueLabelRe.FindStringSubmatch(path)
 		number, _ := strconv.Atoi(m[3])
-		label := m[4]
+		label, err := url.PathUnescape(m[4])
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+			return
+		}
 		if r.Method == http.MethodDelete {
 			f.removeLabel(w, number, label)
 			return
