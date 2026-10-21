@@ -401,3 +401,128 @@ func TestFormatCard(t *testing.T) {
 		})
 	}
 }
+
+// --- Fix round 1 (controller review) ---
+
+// TestAddRejectsMultilineLine checks that Add rejects a line smuggling
+// extra lines (and so, potentially, extra cards) via '\n' or '\r'
+// instead of taking it as the single card line it's documented to be.
+func TestAddRejectsMultilineLine(t *testing.T) {
+	data := readTestdata(t, "plugin.md")
+	b, err := Parse(data, testStatuses())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	before := b.Bytes()
+	_, err = b.Add("todo", "- [ ] x\n- [ ] y `#7`")
+	if err == nil {
+		t.Fatal("Add: want error for a line containing '\\n', got nil")
+	}
+	wantMsg := "card line must be a single line: \"- [ ] x\\n- [ ] y `#7`\""
+	if err.Error() != wantMsg {
+		t.Errorf("Add error = %q, want %q", err.Error(), wantMsg)
+	}
+	if got := b.Bytes(); !bytes.Equal(got, before) {
+		t.Errorf("board changed despite the rejected Add:\n--- before ---\n%s\n--- after ---\n%s", before, got)
+	}
+
+	if _, err := b.Add("todo", "- [ ] x\r\n- [ ] y `#7`"); err == nil {
+		t.Fatal("Add: want error for a line containing '\\r\\n', got nil")
+	}
+}
+
+// TestRewriteFirstLineRejectsMultilineLine is the same check for
+// RewriteFirstLine.
+func TestRewriteFirstLineRejectsMultilineLine(t *testing.T) {
+	data := readTestdata(t, "plugin.md")
+	b, err := Parse(data, testStatuses())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	card := b.Find(42)
+	original := card.lines[0]
+
+	err = b.RewriteFirstLine(card, "- [ ] x\n- [ ] y `#7`")
+	if err == nil {
+		t.Fatal("RewriteFirstLine: want error for a line containing '\\n', got nil")
+	}
+	wantMsg := "card line must be a single line: \"- [ ] x\\n- [ ] y `#7`\""
+	if err.Error() != wantMsg {
+		t.Errorf("RewriteFirstLine error = %q, want %q", err.Error(), wantMsg)
+	}
+	if card.lines[0] != original {
+		t.Errorf("card line changed despite the rejected rewrite: %q, want %q", card.lines[0], original)
+	}
+}
+
+func TestSetIssueIDRejectsNonPositive(t *testing.T) {
+	data := readTestdata(t, "plugin.md")
+	b, err := Parse(data, testStatuses())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	card := b.Cards()[0] // the plain task, no issue id yet
+	for _, id := range []int{0, -1, -42} {
+		if err := b.SetIssueID(card, id); err == nil {
+			t.Errorf("SetIssueID(card, %d): want error, got nil", id)
+		}
+	}
+	if card.IssueID != 0 {
+		t.Errorf("IssueID = %d after rejected SetIssueID calls, want 0", card.IssueID)
+	}
+}
+
+func TestSetIssueIDRejectsDuplicate(t *testing.T) {
+	data := readTestdata(t, "plugin.md")
+	b, err := Parse(data, testStatuses())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	card := b.Cards()[0] // the plain task, no issue id yet
+	err = b.SetIssueID(card, 42)
+	if err == nil {
+		t.Fatal("SetIssueID: want *DuplicateError for an id already on the board (#42), got nil")
+	}
+	var dupErr *DuplicateError
+	if !errors.As(err, &dupErr) {
+		t.Fatalf("SetIssueID error = %v (%T), want *DuplicateError", err, err)
+	}
+	if dupErr.ID != 42 {
+		t.Errorf("DuplicateError.ID = %d, want 42", dupErr.ID)
+	}
+	if card.IssueID != 0 {
+		t.Errorf("IssueID = %d after rejected SetIssueID, want 0", card.IssueID)
+	}
+}
+
+// TestMoveToSameStatusIsNoOp checks the controller ruling that moving
+// a card to the status it's already in doesn't reorder it within its
+// section: before this fix, Move(c, c.Status) on a non-last card
+// (A, B) unconditionally cut it out and re-appended it after the
+// section's last card, turning (A, B) into (B, A).
+func TestMoveToSameStatusIsNoOp(t *testing.T) {
+	data := []byte("## Backlog\n\n- [ ] A `#1`\n- [ ] B `#2`\n\n## Todo\n\n## In Progress\n\n## Completed\n")
+	b, err := Parse(data, testStatuses())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	card := b.Find(1)
+	if card == nil {
+		t.Fatal("Find(1) = nil, want card A")
+	}
+
+	if err := b.Move(card, "backlog"); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if got := b.Bytes(); !bytes.Equal(got, data) {
+		t.Errorf("Move(c, c.Status) changed the board:\n--- want (unchanged) ---\n%s\n--- got ---\n%s", data, got)
+	}
+	if card.Status != "backlog" {
+		t.Errorf("Status = %q, want %q", card.Status, "backlog")
+	}
+}

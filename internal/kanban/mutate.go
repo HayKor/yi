@@ -64,6 +64,15 @@ func hasEOL(line string) bool {
 	return strings.HasSuffix(line, "\n")
 }
 
+// isSingleLine reports whether s contains no line break of its own.
+// Add and RewriteFirstLine take a bare line (no EOL) to place verbatim
+// as a card's first line; without this check, a caller-supplied "\n"
+// or "\r" would smuggle extra lines (even extra cards) into the board
+// instead of the one line the caller asked for.
+func isSingleLine(s string) bool {
+	return !strings.ContainsAny(s, "\r\n")
+}
+
 // SetChecked sets the checkbox character on c's first line, leaving
 // everything else about the line untouched (dates, tags, continuation
 // lines).
@@ -86,11 +95,20 @@ func setCheckboxChar(c *Card, checked bool) {
 }
 
 // SetIssueID appends a "`#id`" token to the end of c's first line. It
-// errors if the card already has an issue id — SetIssueID is only for
-// a plain card that just got one, never for replacing an existing id.
+// errors if id isn't a valid (positive) issue id, if the card already
+// has an issue id — SetIssueID is only for a plain card that just got
+// one, never for replacing an existing id — or if id already belongs
+// to another card on the board (a *DuplicateError, as Add returns for
+// the same situation).
 func (b *Board) SetIssueID(c *Card, id int) error {
+	if id <= 0 {
+		return fmt.Errorf("invalid issue id: %d", id)
+	}
 	if c.IssueID != 0 {
 		return fmt.Errorf("card already has issue id #%d: %q", c.IssueID, stripEOL(c.lines[0]))
+	}
+	if existing := b.Find(id); existing != nil {
+		return &DuplicateError{ID: id, Lines: []int{existing.Line}}
 	}
 	content, eol := splitEOL(c.lines[0])
 	c.lines[0] = content + " `#" + strconv.Itoa(id) + "`" + eol
@@ -126,9 +144,12 @@ func (b *Board) SetLink(c *Card, target string) error {
 // RewriteFirstLine replaces c's first line wholesale and re-parses its
 // fields. Unlike SetChecked/SetIssueID/SetLink (surgical edits),
 // RewriteFirstLine is for changes to the card's structure itself: a
-// plain card gaining a note, or a card being renamed. line must parse
-// as a card and must not include an EOL.
+// plain card gaining a note, or a card being renamed. line must be a
+// single line (no '\r' or '\n') that parses as a card.
 func (b *Board) RewriteFirstLine(c *Card, line string) error {
+	if !isSingleLine(line) {
+		return fmt.Errorf("card line must be a single line: %q", line)
+	}
 	if !isCardStart(line) {
 		return fmt.Errorf("not a card line: %q", line)
 	}
@@ -187,11 +208,16 @@ func (b *Board) locateCard(c *Card) (sec *section, idx int, found bool) {
 // (after the section's last card, or after the first blank line
 // following the heading if it has none) and creating the section if
 // it doesn't exist yet. Entering a closeIssue status checks the card;
-// leaving one unchecks it; otherwise the checkbox is untouched.
+// leaving one unchecks it; otherwise the checkbox is untouched. Moving
+// a card to the status it's already in is a no-op: Move never
+// reorders cards within their own section.
 func (b *Board) Move(c *Card, to domain.StatusKey) error {
 	target, ok := statusByKey(b.statuses, to)
 	if !ok {
 		return fmt.Errorf("unknown status %q", to)
+	}
+	if to == c.Status {
+		return nil
 	}
 	from, _ := statusByKey(b.statuses, c.Status) // zero value if c.Status is somehow unconfigured; CloseIssue false either way
 
@@ -214,14 +240,17 @@ func (b *Board) Move(c *Card, to domain.StatusKey) error {
 }
 
 // Add parses line as a new card and inserts it into the to section
-// (creating the section if needed), same as Move. line must not
-// include an EOL and must parse as a card. If line carries an issue id
-// already present elsewhere on the board, Add returns a *DuplicateError
-// instead of creating a second card for it.
+// (creating the section if needed), same as Move. line must be a
+// single line (no '\r' or '\n') that parses as a card. If line
+// carries an issue id already present elsewhere on the board, Add
+// returns a *DuplicateError instead of creating a second card for it.
 func (b *Board) Add(to domain.StatusKey, line string) (*Card, error) {
 	target, ok := statusByKey(b.statuses, to)
 	if !ok {
 		return nil, fmt.Errorf("unknown status %q", to)
+	}
+	if !isSingleLine(line) {
+		return nil, fmt.Errorf("card line must be a single line: %q", line)
 	}
 	if !isCardStart(line) {
 		return nil, fmt.Errorf("not a card line: %q", line)
