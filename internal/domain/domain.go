@@ -5,6 +5,7 @@ package domain
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -37,14 +38,23 @@ type Issue struct {
 	UpdatedAt time.Time
 }
 
-// HasLabel reports whether the issue carries the given label.
+// HasLabel reports whether the issue carries the given label,
+// compared case-insensitively (GitHub label names are).
 func (i Issue) HasLabel(label string) bool {
+	_, ok := i.FindLabel(label)
+	return ok
+}
+
+// FindLabel returns the issue's own spelling of label (matched
+// case-insensitively), so a caller removing it can name it exactly as
+// the tracker has it.
+func (i Issue) FindLabel(label string) (string, bool) {
 	for _, l := range i.Labels {
-		if l == label {
-			return true
+		if strings.EqualFold(l, label) {
+			return l, true
 		}
 	}
-	return false
+	return "", false
 }
 
 // StatusKey identifies a kanban column/status in the config.
@@ -56,6 +66,22 @@ type Status struct {
 	Heading    string
 	Label      string
 	CloseIssue bool
+}
+
+// wipLimitRe matches the Kanban plugin's max-items suffix on a lane
+// heading, e.g. the " (3)" in "In Progress (3)".
+var wipLimitRe = regexp.MustCompile(`\s*\(\d+\)$`)
+
+// NormalizeHeading reduces a kanban column heading to the form used to
+// match a board section against a configured Status.Heading: trimmed,
+// without a trailing WIP-limit suffix ("In Progress (3)"), and
+// lower-cased. Two headings name the same column iff their normalized
+// forms are equal; config validation uses the same rule to reject
+// headings that would collide on the board.
+func NormalizeHeading(s string) string {
+	s = strings.TrimSpace(s)
+	s = wipLimitRe.ReplaceAllString(s, "")
+	return strings.ToLower(strings.TrimSpace(s))
 }
 
 // ParseIssueID parses an issue ID from user input, accepting a bare
