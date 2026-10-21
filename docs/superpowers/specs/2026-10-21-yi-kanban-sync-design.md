@@ -173,12 +173,12 @@ internal/
     providertest/             conformance suite для любого провайдера
   gitrepo/                    Repository: CurrentBranch, BranchExists, Switch, CreateAndSwitch
   branch/                     Name(template, type, id, title) + slug/транслитерация
-  sync/                       Planner (чистые функции) + Applier (side effects)
+  reconcile/                  Planner (чистые функции) + Applier (side effects)
   cli/                        cobra-команды; тонкий слой: собрать зависимости → sync → вывод
 ```
 
 Правила зависимостей: `domain` ни от чего не зависит; `kanban`, `notes`, `branch`, `gitrepo`
-знают только `domain`; `provider/*` знает только `domain`; `sync` знает `domain`, `config`,
+знают только `domain`; `provider/*` знает только `domain`; `reconcile` знает `domain`, `config`,
 `kanban`, `notes`, `provider` (интерфейс); только `cli` и `cmd` собирают всё вместе.
 Ядро никогда не импортирует `provider/github`.
 
@@ -284,7 +284,10 @@ issues. Закрытые нужны только для карточек, кот
   после последней карточки секции; если карточек нет — сразу после heading (через одну
   пустую строку, как делает плагин). Continuation-строки едут вместе с карточкой.
 - `Add(status, line)` — вставка по тем же правилам.
-- `SetChecked(id, bool)`, `RewriteFirstLine(id, line)` — меняют только первую строку карточки.
+- `SetChecked`, `SetIssueID` (дописывает `` `#id` `` в конец строки), `SetLink` (заменяет
+  только токен `[[...]]`, сохраняя alias) — точечные правки: даты `@{…}`, теги и прочий текст
+  карточки сохраняются. `RewriteFirstLine` (каноничная строка) используется только там, где
+  меняется сама структура: plain-карточка получает note, или переименовывается plain-карточка.
 - Если для статуса нет секции — секция `## <heading>` создаётся после ближайшей предыдущей
   configured-секции (или перед первой opaque-секцией архива/settings), с пустой строкой
   вокруг.
@@ -341,7 +344,9 @@ issues. Закрытые нужны только для карточек, кот
 `open` + label статуса с `closeIssue` (например, `status:completed`) даёт этот статус;
 `status` покажет его как «open, но в Completed», а `push` закроет issue.
 
-### 6.6 Синхронизация (`internal/sync`)
+### 6.6 Синхронизация (`internal/reconcile`)
+
+Пакет назван `reconcile`, а не `sync`, чтобы не конфликтовать со стандартным `sync`.
 
 Planner — чистые функции: на входе `Board`, `map[int]Issue` (open + догруженные), `Config`,
 `notes.Index`; на выходе `Plan{Changes []Change, Warnings []Warning}`. Никакого IO.
@@ -356,9 +361,8 @@ type RenameLocal  struct{ ID int; From, To string }      // note + карточ�
 type LinkNote     struct{ ID int; Title string }         // создать note, переписать карточку
 
 // remote
-type CreateIssue  struct{ CardRef kanban.Ref; Title string; Status StatusKey; WithNote bool }
-type SetStatus    struct{ ID int; From, To StatusKey; Add, Remove []string }
-type SetState     struct{ ID int; To domain.IssueState } // close / reopen
+type CreateIssue  struct{ Card *kanban.Card; Title, Body string; Status StatusKey; WithNote bool }
+type SetStatus    struct{ ID int; From, To StatusKey; Update provider.IssueUpdate } // labels + close/reopen
 type RenameRemote struct{ ID int; From, To string }
 ```
 
@@ -390,8 +394,8 @@ Open issue не на доске → `AddCard` в его статус (`WithNote`
 
 - status-labels не равны {label колонки} → `SetStatus` (add недостающий, remove прочие
   status-labels; не-статусные labels не трогаются);
-- колонка с `closeIssue` и issue open → `SetState(closed)`; колонка без `closeIssue` и issue
-  closed → `SetState(open)`;
+- колонка с `closeIssue` и issue open → close; колонка без `closeIssue` и issue closed →
+  reopen (в том же `SetStatus`);
 - title отличается (§6.4) → `RenameRemote`.
 
 Карточки без id → `CreateIssue` (labels = label колонки; если колонка с `closeIssue` —
@@ -410,6 +414,9 @@ Open issues не на доске → не трогаются (видны в `sta
    `CreateIssue` его id сразу вносится в in-memory Board. **При ошибке на середине** Board
    всё равно сохраняется (с уже полученными id), затем возвращается ошибка — повторный
    `push` не создаст дубликаты.
+   Если при этом сработал пункт 1 (файл изменён), `Kanban.md` не пишется, а `yi` печатает
+   для каждого созданного issue строку «add `#73` to card "Title"», чтобы пользователь
+   вписал id вручную.
 3. Порядок локальной записи: сначала notes (create/rename), потом `Kanban.md`.
 4. `Kanban.md` пишется атомарно: temp-файл в том же каталоге → `fsync` → `rename`,
    права исходного файла сохраняются.
