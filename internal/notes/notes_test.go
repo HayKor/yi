@@ -355,3 +355,78 @@ func TestLoadIndexRecursive(t *testing.T) {
 		t.Errorf("idx.byID[7] = %q, want %q", idx.byID[7], nested)
 	}
 }
+
+// TestReplaceH1SanitizedAndCRLF covers final review M5: the H1 is
+// matched against the old title through Sanitize (the old title often
+// comes from a lossy filename: "Fix crash" for "# Fix: crash"), and CRLF
+// notes are handled, keeping their line endings.
+func TestReplaceH1SanitizedAndCRLF(t *testing.T) {
+	cases := []struct {
+		name, content, old, new, want string
+	}{
+		{
+			"lossy old title",
+			"---\nissue: 31\n---\n\n# Fix: crash\n\nbody\n", "Fix crash", "Fix: crash on start",
+			"---\nissue: 31\n---\n\n# Fix: crash on start\n\nbody\n",
+		},
+		{
+			"CRLF note",
+			"---\r\nissue: 42\r\n---\r\n\r\n# Old\r\n\r\nbody\r\n", "Old", "New",
+			"---\r\nissue: 42\r\n---\r\n\r\n# New\r\n\r\nbody\r\n",
+		},
+		{
+			"custom H1 kept",
+			"# Something else\n", "Old", "New",
+			"# Something else\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := replaceH1(c.content, c.old, c.new); got != c.want {
+				t.Errorf("replaceH1() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestRenameCaseOnlyOnCaseInsensitiveFS covers final review I4. On a
+// case-insensitive filesystem "42 foo.md" and "42 Foo.md" are the same
+// file, so Stat(newPath) succeeds. That is simulated here with a hard
+// link (os.SameFile reports true for both names), which must not be
+// mistaken for a different note squatting the target path.
+func TestRenameCaseOnlyOnCaseInsensitiveFS(t *testing.T) {
+	dir := t.TempDir()
+	tasksDir := filepath.Join(dir, "Tasks")
+	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := NewStore(dir, tasksDir)
+
+	oldPath := filepath.Join(tasksDir, "42 foo.md")
+	if err := os.WriteFile(oldPath, []byte("---\nissue: 42\n---\n\n# foo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	newPath := filepath.Join(tasksDir, "42 Foo.md")
+	if err := os.Link(oldPath, newPath); err != nil {
+		t.Skipf("hard links unsupported: %v", err)
+	}
+
+	idx := &Index{byID: map[int]string{42: oldPath}}
+	got, err := s.Rename(idx, oldPath, 42, "foo", "Foo")
+	if err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if got != newPath {
+		t.Errorf("Rename path = %q, want %q", got, newPath)
+	}
+	data, err := os.ReadFile(newPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "---\nissue: 42\n---\n\n# Foo\n"; string(data) != want {
+		t.Errorf("content = %q, want %q", data, want)
+	}
+	if idx.byID[42] != newPath {
+		t.Errorf("idx[42] = %q, want %q", idx.byID[42], newPath)
+	}
+}

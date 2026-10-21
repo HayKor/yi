@@ -243,16 +243,19 @@ func (s *Store) Create(idx *Index, id int, title string) (string, error) {
 }
 
 // replaceH1 replaces the first top-level Markdown heading ("# ...")
-// found after any frontmatter block, but only if its text equals
-// oldTitle exactly. All other content, including line endings, is
+// found after any frontmatter block, but only if its text matches
+// oldTitle once both are run through Sanitize (the old title often comes
+// from a lossy note filename: "Fix crash" for "# Fix: crash"). CRLF
+// content is handled; all other content, including line endings, is
 // left untouched.
 func replaceH1(content, oldTitle, newTitle string) string {
 	lines := strings.Split(content, "\n")
+	text := func(i int) string { return strings.TrimSuffix(lines[i], "\r") }
 
 	start := 0
-	if len(lines) > 0 && lines[0] == "---" {
+	if len(lines) > 0 && text(0) == "---" {
 		for i := 1; i < len(lines); i++ {
-			if lines[i] == "---" {
+			if text(i) == "---" {
 				start = i + 1
 				break
 			}
@@ -260,9 +263,10 @@ func replaceH1(content, oldTitle, newTitle string) string {
 	}
 
 	for i := start; i < len(lines); i++ {
-		if strings.HasPrefix(lines[i], "# ") {
-			if lines[i] == "# "+oldTitle {
-				lines[i] = "# " + newTitle
+		if h1, ok := strings.CutPrefix(text(i), "# "); ok {
+			if Sanitize(h1) == Sanitize(oldTitle) {
+				cr := strings.TrimPrefix(lines[i], text(i))
+				lines[i] = "# " + newTitle + cr
 			}
 			break
 		}
@@ -272,14 +276,18 @@ func replaceH1(content, oldTitle, newTitle string) string {
 }
 
 // Rename moves a note to match a new title, updating its H1 heading
-// if (and only if) that heading currently equals oldTitle exactly.
+// if (and only if) that heading currently matches oldTitle (see
+// replaceH1).
 // All other content and the file's mode are preserved byte-for-byte.
 //
 // If the sanitized newTitle produces the same filename the note
 // already has, the file is not moved (but its H1 may still be
 // updated). If the computed new path already exists, Rename returns
-// an error and leaves everything unchanged. On success, idx is
-// updated to the (possibly unchanged) new path.
+// an error and leaves everything unchanged — unless it is the note
+// itself under another name, as with a case-only title change on a
+// case-insensitive filesystem ("42 foo.md" → "42 Foo.md"), in which case
+// the file is renamed in place. On success, idx is updated to the
+// (possibly unchanged) new path.
 func (s *Store) Rename(idx *Index, path string, id int, oldTitle, newTitle string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -292,16 +300,38 @@ func (s *Store) Rename(idx *Index, path string, id int, oldTitle, newTitle strin
 
 	newPath := filepath.Join(filepath.Dir(path), filenameFor(id, newTitle))
 	sameFile := newPath == path
+	caseOnly := false
 
 	if !sameFile {
-		if _, err := os.Stat(newPath); err == nil {
-			return "", fmt.Errorf("notes: %s already exists", newPath)
+		if newInfo, err := os.Stat(newPath); err == nil {
+			if !os.SameFile(info, newInfo) {
+				return "", fmt.Errorf("notes: %s already exists", newPath)
+			}
+			caseOnly = true
 		} else if !os.IsNotExist(err) {
 			return "", err
 		}
 	}
 
 	newData := replaceH1(string(data), oldTitle, newTitle)
+
+	if caseOnly {
+		// newPath names the very same file: rewrite it in place, then
+		// let the filesystem change the name's case. Writing newPath and
+		// removing path, as below, would delete the note.
+		if newData != string(data) {
+			if err := os.WriteFile(path, []byte(newData), info.Mode().Perm()); err != nil {
+				return "", err
+			}
+		}
+		if err := os.Rename(path, newPath); err != nil {
+			return "", err
+		}
+		if idx != nil {
+			idx.byID[id] = newPath
+		}
+		return newPath, nil
+	}
 
 	if sameFile {
 		if newData != string(data) {
