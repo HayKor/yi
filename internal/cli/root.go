@@ -3,16 +3,18 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 
 	"github.com/spf13/cobra"
+
+	"kanban-sync/internal/provider"
 )
 
 // Deps collects yi's side-effecting dependencies so they can be faked in
-// tests. Fields for the issue provider and git repository are added by
-// later tasks.
+// tests. Fields for the git repository are added by later tasks.
 type Deps struct {
 	Stdin      io.Reader
 	Stdout     io.Writer
@@ -21,6 +23,12 @@ type Deps struct {
 	Getwd      func() (string, error)
 	IsTerminal bool
 	Version    string
+
+	// NewProvider constructs the issue provider a sync command talks
+	// to. A nil NewProvider defaults to provider.New (the registry of
+	// providers registered via provider.Register); tests override it
+	// to return a fake.
+	NewProvider func(context.Context, provider.Config) (provider.IssueProvider, error)
 }
 
 // usageError marks an error that originates from command-line usage
@@ -79,6 +87,9 @@ func NewRootCommand(d Deps) *cobra.Command {
 	})
 
 	root.AddCommand(newVersionCommand(d))
+	root.AddCommand(newStatusCommand(d))
+	root.AddCommand(newPullCommand(d))
+	root.AddCommand(newPushCommand(d))
 
 	return root
 }
@@ -97,12 +108,15 @@ func newVersionCommand(d Deps) *cobra.Command {
 
 // Main runs the yi CLI with the given dependencies and arguments, and
 // returns the process exit code: 0 on success, 1 on a command error
-// (printed to Stderr as "error: <msg>"), 2 on usage errors.
-func Main(d Deps, args []string) int {
+// (printed to Stderr as "error: <msg>"), 2 on usage errors. ctx is
+// passed down to every command via cmd.Context(); cmd/yi/main.go
+// derives it from signal.NotifyContext so Ctrl+C cancels in-flight
+// network requests.
+func Main(ctx context.Context, d Deps, args []string) int {
 	cmd := NewRootCommand(d)
 	cmd.SetArgs(args)
 
-	err := cmd.Execute()
+	err := cmd.ExecuteContext(ctx)
 	if err == nil {
 		return 0
 	}

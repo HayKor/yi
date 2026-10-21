@@ -2,7 +2,9 @@
 package main
 
 import (
+	"context"
 	"os"
+	"os/signal"
 
 	"kanban-sync/internal/cli"
 	_ "kanban-sync/internal/provider/github"
@@ -12,7 +14,10 @@ import (
 var version = "dev"
 
 func main() {
-	os.Exit(cli.Main(cli.Deps{
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	os.Exit(cli.Main(ctx, cli.Deps{
 		Stdin:      os.Stdin,
 		Stdout:     os.Stdout,
 		Stderr:     os.Stderr,

@@ -36,6 +36,15 @@ type Row struct {
 	Local     domain.StatusKey
 	Remote    domain.StatusKey
 	TitleDiff bool
+
+	// RemoteOpen reports whether the matched remote issue (if any) is
+	// currently open. It is only meaningful when Remote != "" (RowOK,
+	// RowDiff, RowRemoteOnly): the CLI uses it to flag an issue that's
+	// open but mapped into a closeIssue column (via a status label),
+	// e.g. "open, but in Completed" (spec §6.5/§6.6). It is always
+	// true for RowRemoteOnly, since Status only lists open remote
+	// issues there.
+	RemoteOpen bool
 }
 
 // Status builds the `yi status` table: one row per board card (in
@@ -73,12 +82,13 @@ func Status(in Input) ([]Row, []string) {
 			kind = RowDiff
 		}
 		rows = append(rows, Row{
-			Kind:      kind,
-			ID:        id,
-			Title:     remote.Title,
-			Local:     card.Status,
-			Remote:    to,
-			TitleDiff: titleDiff,
+			Kind:       kind,
+			ID:         id,
+			Title:      remote.Title,
+			Local:      card.Status,
+			Remote:     to,
+			TitleDiff:  titleDiff,
+			RemoteOpen: remote.State == domain.IssueOpen,
 		})
 	}
 
@@ -98,7 +108,7 @@ func Status(in Input) ([]Row, []string) {
 		issue := in.Remote[id]
 		to, warns := in.Cfg.StatusOf(issue)
 		warn.add(warns...)
-		rows = append(rows, Row{Kind: RowRemoteOnly, ID: id, Title: issue.Title, Remote: to})
+		rows = append(rows, Row{Kind: RowRemoteOnly, ID: id, Title: issue.Title, Remote: to, RemoteOpen: true})
 	}
 
 	return rows, warn.list
