@@ -105,8 +105,13 @@ func testLabelsAddRemove(t *testing.T, p provider.IssueProvider) {
 	if err != nil {
 		t.Fatalf("UpdateIssue(%d) error = %v", created.ID, err)
 	}
-
 	wantLabels(t, updated.Labels, "bug", "status:in-progress")
+
+	got, err := p.GetIssue(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetIssue(%d) error = %v", created.ID, err)
+	}
+	wantLabels(t, got.Labels, "bug", "status:in-progress")
 }
 
 func testRemoveAbsentLabel(t *testing.T, p provider.IssueProvider) {
@@ -138,6 +143,13 @@ func testCloseReopen(t *testing.T, p provider.IssueProvider) {
 	if updated.State != domain.IssueClosed {
 		t.Fatalf("State after close = %v, want %v", updated.State, domain.IssueClosed)
 	}
+	got, err := p.GetIssue(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetIssue(%d) error = %v", created.ID, err)
+	}
+	if got.State != domain.IssueClosed {
+		t.Fatalf("GetIssue(%d).State after close = %v, want %v", created.ID, got.State, domain.IssueClosed)
+	}
 
 	open := domain.IssueOpen
 	updated, err = p.UpdateIssue(ctx, created.ID, provider.IssueUpdate{State: &open})
@@ -146,6 +158,14 @@ func testCloseReopen(t *testing.T, p provider.IssueProvider) {
 	}
 	if updated.State != domain.IssueOpen {
 		t.Fatalf("State after reopen = %v, want %v", updated.State, domain.IssueOpen)
+	}
+
+	got, err = p.GetIssue(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetIssue(%d) error = %v", created.ID, err)
+	}
+	if got.State != domain.IssueOpen {
+		t.Fatalf("GetIssue(%d).State after reopen = %v, want %v", created.ID, got.State, domain.IssueOpen)
 	}
 }
 
@@ -166,6 +186,15 @@ func testUpdateTitle(t *testing.T, p provider.IssueProvider) {
 		t.Errorf("Title = %q, want %q", updated.Title, newTitle)
 	}
 	wantLabels(t, updated.Labels, "bug")
+
+	got, err := p.GetIssue(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetIssue(%d) error = %v", created.ID, err)
+	}
+	if got.Title != newTitle {
+		t.Errorf("GetIssue(%d).Title = %q, want %q", created.ID, got.Title, newTitle)
+	}
+	wantLabels(t, got.Labels, "bug")
 }
 
 func testNotFound(t *testing.T, p provider.IssueProvider) {
