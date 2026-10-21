@@ -10,11 +10,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"kanban-sync/internal/gitrepo"
 	"kanban-sync/internal/provider"
 )
 
 // Deps collects yi's side-effecting dependencies so they can be faked in
-// tests. Fields for the git repository are added by later tasks.
+// tests.
 type Deps struct {
 	Stdin      io.Reader
 	Stdout     io.Writer
@@ -29,6 +30,11 @@ type Deps struct {
 	// providers registered via provider.Register); tests override it
 	// to return a fake.
 	NewProvider func(context.Context, provider.Config) (provider.IssueProvider, error)
+
+	// OpenGit opens the git working tree `yi start` switches branches
+	// in. A nil OpenGit defaults to gitrepo.Open; tests override it to
+	// point at a disposable temp repo.
+	OpenGit func(dir string) gitrepo.Repository
 }
 
 // usageError marks an error that originates from command-line usage
@@ -90,6 +96,9 @@ func NewRootCommand(d Deps) *cobra.Command {
 	root.AddCommand(newStatusCommand(d))
 	root.AddCommand(newPullCommand(d))
 	root.AddCommand(newPushCommand(d))
+	root.AddCommand(newNewCommand(d))
+	root.AddCommand(newStartCommand(d))
+	root.AddCommand(newDoneCommand(d))
 
 	return root
 }

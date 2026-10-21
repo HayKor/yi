@@ -7,6 +7,7 @@ import (
 	"os/signal"
 
 	"kanban-sync/internal/cli"
+	"kanban-sync/internal/gitrepo"
 	_ "kanban-sync/internal/provider/github"
 )
 
@@ -25,6 +26,7 @@ func main() {
 		Getwd:      os.Getwd,
 		IsTerminal: isTerminal(os.Stdout),
 		Version:    version,
+		OpenGit:    gitrepo.Open,
 	}, os.Args[1:]))
 }
 
