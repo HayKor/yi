@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"kanban-sync/internal/cli"
+	_ "kanban-sync/internal/provider/github"
 )
 
 // version is set at build time via -ldflags "-X main.version=...".
