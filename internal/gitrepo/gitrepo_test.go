@@ -136,3 +136,67 @@ func TestGitErrorIncludesStderr(t *testing.T) {
 		t.Fatalf("Switch(%q) error = %q, want it to mention %q", "nope", err.Error(), "nope")
 	}
 }
+
+func TestSwitchRejectsOptionLikeName(t *testing.T) {
+	dir := newTestRepo(t)
+	r := Open(dir)
+	ctx := context.Background()
+
+	before, err := r.CurrentBranch(ctx)
+	if err != nil {
+		t.Fatalf("CurrentBranch() error: %v", err)
+	}
+
+	if err := r.Switch(ctx, "--help"); err == nil {
+		t.Fatalf("Switch(%q) = nil, want error", "--help")
+	}
+
+	after, err := r.CurrentBranch(ctx)
+	if err != nil {
+		t.Fatalf("CurrentBranch() error: %v", err)
+	}
+	if after != before {
+		t.Fatalf("current branch changed: %q -> %q, want unchanged", before, after)
+	}
+}
+
+func TestCreateAndSwitchRejectsOptionLikeName(t *testing.T) {
+	dir := newTestRepo(t)
+	r := Open(dir)
+	ctx := context.Background()
+
+	before, err := r.CurrentBranch(ctx)
+	if err != nil {
+		t.Fatalf("CurrentBranch() error: %v", err)
+	}
+
+	if err := r.CreateAndSwitch(ctx, "-f"); err == nil {
+		t.Fatalf("CreateAndSwitch(%q) = nil, want error", "-f")
+	}
+
+	after, err := r.CurrentBranch(ctx)
+	if err != nil {
+		t.Fatalf("CurrentBranch() error: %v", err)
+	}
+	if after != before {
+		t.Fatalf("current branch changed: %q -> %q, want unchanged", before, after)
+	}
+}
+
+func TestBranchExistsRejectsOptionLikeName(t *testing.T) {
+	dir := newTestRepo(t)
+	r := Open(dir)
+
+	if _, err := r.BranchExists(context.Background(), "--all"); err == nil {
+		t.Fatalf("BranchExists(%q) = nil error, want error", "--all")
+	}
+}
+
+func TestCheckBranchNameRejectsOptionLikeName(t *testing.T) {
+	dir := newTestRepo(t)
+	r := Open(dir)
+
+	if err := r.CheckBranchName(context.Background(), "-x"); err == nil {
+		t.Fatalf("CheckBranchName(%q) = nil, want error", "-x")
+	}
+}

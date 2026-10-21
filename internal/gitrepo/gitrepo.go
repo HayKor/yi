@@ -38,6 +38,16 @@ func Open(dir string) Repository {
 	return &repo{dir: dir}
 }
 
+// validateBranchArg rejects branch names that look like command-line
+// options, so a crafted or malformed name (e.g. "--help", "-f") can never
+// be parsed by git as a flag instead of a ref name.
+func validateBranchArg(name string) error {
+	if strings.HasPrefix(name, "-") {
+		return fmt.Errorf("invalid branch name %q", name)
+	}
+	return nil
+}
+
 // gitError formats a failed git invocation as "git <args>: <stderr>".
 type gitError struct {
 	args   []string
@@ -80,6 +90,13 @@ func (r *repo) CurrentBranch(ctx context.Context) (string, error) {
 }
 
 func (r *repo) BranchExists(ctx context.Context, name string) (bool, error) {
+	if err := validateBranchArg(name); err != nil {
+		return false, err
+	}
+	// The "refs/heads/" prefix already makes option injection impossible
+	// here, but rev-parse's own "--verify ... --" breaks lookup of a ref
+	// that otherwise exists (verified against real git), so we rely on
+	// validateBranchArg alone rather than an end-of-options separator.
 	_, exitErr, err := r.run(ctx, "rev-parse", "--verify", "--quiet", "refs/heads/"+name)
 	if err == nil {
 		return true, nil
@@ -91,16 +108,28 @@ func (r *repo) BranchExists(ctx context.Context, name string) (bool, error) {
 }
 
 func (r *repo) Switch(ctx context.Context, name string) error {
-	_, _, err := r.run(ctx, "switch", name)
+	if err := validateBranchArg(name); err != nil {
+		return err
+	}
+	_, _, err := r.run(ctx, "switch", "--", name)
 	return err
 }
 
 func (r *repo) CreateAndSwitch(ctx context.Context, name string) error {
-	_, _, err := r.run(ctx, "switch", "-c", name)
+	if err := validateBranchArg(name); err != nil {
+		return err
+	}
+	_, _, err := r.run(ctx, "switch", "-c", name, "--")
 	return err
 }
 
 func (r *repo) CheckBranchName(ctx context.Context, name string) error {
+	if err := validateBranchArg(name); err != nil {
+		return err
+	}
+	// check-ref-format --branch doesn't accept an end-of-options "--"
+	// (verified against real git: it errors with a usage message), so
+	// validateBranchArg is the only guard here.
 	_, _, err := r.run(ctx, "check-ref-format", "--branch", name)
 	return err
 }
