@@ -104,7 +104,9 @@ git:                         # опционально; без секции `yi s
 ### Валидация (ошибка при загрузке)
 
 - `provider` зарегистрирован; `repository` не пуст.
-- `statuses` не пуст; `heading` и `label` уникальны.
+- `statuses` не пуст; `heading` уникальны после `domain.NormalizeHeading` (так же, как
+  колонки доски матчатся на статусы, §6.2), `label` уникальны без учёта регистра.
+- Секция `git` без `repository` — ошибка `git.repository is required`.
 - Ровно один статус с `closeIssue: true` (закрытый issue однозначно мапится в колонку).
 - `defaultStatus`, `startStatus`, `doneStatus` ссылаются на существующие ключи;
   `doneStatus` имеет `closeIssue: true`.
@@ -165,7 +167,7 @@ cmd/yi/main.go                точка входа; blank-import провайд
 internal/
   domain/                     Issue, Status — без зависимостей
   config/                     Load, Validate, Resolve(project); Config.StatusOf(issue)
-  kanban/                     Board: Parse/Bytes, Cards(), Move, Add, SetCheckbox, RewriteCard
+  kanban/                     Board: Parse/Bytes, Cards(), Move, Add, SetChecked, SetIssueID, SetLink, SetTitle
   notes/                      Store: Find(id), Create(id, title), Rename(id, newTitle); filename sanitize
   provider/                   IssueProvider, Registry, ошибки
     github/                   реализация через go-github + auth
@@ -237,11 +239,13 @@ issues. Закрытые нужны только для карточек, кот
 
 #### GitHub (`internal/provider/github`)
 
-- Токен: `GITHUB_TOKEN` → `GH_TOKEN` → `gh auth token` (если `gh` в `PATH`) → `ErrAuth`
-  с подсказкой. Токены нигде не сохраняются.
+- Токен: `GITHUB_TOKEN` → `GH_TOKEN` → `gh auth token` (если `gh` в `PATH`; при заданном
+  `baseUrl` — `gh auth token --hostname <host baseUrl>`) → `ErrAuth` с подсказкой. Токены
+  нигде не сохраняются.
 - `github.baseUrl` → `github.NewClient(...).WithEnterpriseURLs`.
 - `ListOpenIssues`: `Issues.ListByRepo(state=open, per_page=100)` с пагинацией; элементы с
-  `PullRequestLinks != nil` отбрасываются.
+  `PullRequestLinks != nil` отбрасываются. `GetIssue` для pull request возвращает
+  `ErrNotFound` — `yi` никогда не меняет labels/state у PR.
 - `UpdateIssue`: title/state — `Issues.Edit`; labels — `AddLabelsToIssue`, затем
   `RemoveLabelForIssue` для каждой (404 на remove игнорируется).
 - HTTP 401/403 → `ErrAuth`, 404/410 → `ErrNotFound`, обёрнутые с контекстом.
@@ -254,7 +258,9 @@ issues. Закрытые нужны только для карточек, кот
 
 - **Section** — строка `## <heading>` и всё до следующего `## ` или до строки `***`
   (разделитель архива плагина), или до `%% kanban:settings`. Секция «configured», если
-  heading (trim, case-insensitive) совпадает с `heading` статуса. Неизвестные секции,
+  heading совпадает с `heading` статуса после `domain.NormalizeHeading` (trim,
+  case-insensitive, без суффикса WIP-лимита `\s*\(\d+\)`: `## In Progress (3)`). Тот же
+  нормализатор использует валидация конфига для проверки уникальности `heading`. Неизвестные секции,
   preamble (frontmatter и всё до первой секции), архив и settings — opaque, не изменяются.
 - **Card** — в configured-секции строка `^- \[( |x|X)\] ` в колонке 0 плюс следующие строки с
   отступом (пробел/таб) — continuation (многострочные карточки плагина). Пустая строка
@@ -264,9 +270,16 @@ issues. Закрытые нужны только для карточек, кот
 
 - `IssueID` — последнее вхождение `` `#(\d+)` ``. Голый `#42` не считается (в Obsidian это тег).
 - `Link` — первый `[[target]]` или `[[target|alias]]`.
+- `Link` не может быть датой: `@[[…]]` — это дата (daily note), а не ссылка карточки.
+- `Meta` — метаданные плагина в порядке появления: даты `@{…}` / `@[[…]]`, время `@@{…}`,
+  теги — `#` в начале строки или после пробела, за которым непробельный хвост, не состоящий
+  только из цифр (голый `#42` — не тег), вне backticks и вне `[[link]]` (`[[Note#Heading]]`).
 - `Title`:
   - есть link → alias, если есть; иначе basename target без префикса `<id> `;
-  - нет link → текст без checkbox и без `` `#id` ``, trim.
+  - нет link → текст без checkbox, без `` `#id` `` и без `Meta`, пробелы схлопнуты.
+  Title никогда не содержит `Meta`: в title issue (CreateIssue/RenameRemote) и в имя note
+  метаданные не попадают; remote title при сравнении (§6.4) и при записи в карточку/имя note
+  тоже берётся без них.
 - `Checked`, `Status` (по секции), позиция (индексы строк).
 
 **Каноничная карточка** (то, что пишет `yi`):
@@ -283,11 +296,20 @@ issues. Закрытые нужны только для карточек, кот
 - `Move(id, status)` — вырезать строки карточки, вставить в целевую секцию. Точка вставки:
   после последней карточки секции; если карточек нет — сразу после heading (через одну
   пустую строку, как делает плагин). Continuation-строки едут вместе с карточкой.
+  В секции без карточек, где перед пустыми строками есть текст (маркер `**Complete**`, который
+  плагин пишет в «complete»-колонке), карточка встаёт сразу под последней непустой строкой
+  этого текста — как пишет плагин.
 - `Add(status, line)` — вставка по тем же правилам.
 - `SetChecked`, `SetIssueID` (дописывает `` `#id` `` в конец строки), `SetLink` (заменяет
   только токен `[[...]]`, сохраняя alias) — точечные правки: даты `@{…}`, теги и прочий текст
-  карточки сохраняются. `RewriteFirstLine` (каноничная строка) используется только там, где
-  меняется сама структура: plain-карточка получает note, или переименовывается plain-карточка.
+  карточки сохраняются.
+- `SetTitle(card, text)` — пересобирает первую строку как `- [<box>] <text>` + ` ` + `Meta`
+  (в исходном порядке, через пробел) + `` `#id` `` (если есть); continuation-строки не
+  трогаются. `text` — title или `[[link]]`. Используется там, где меняется сама структура
+  link-less карточки: plain-карточка получает note (LinkNote, CreateIssue с note), или
+  переименовывается plain-карточка (RenameLocal). LinkNote планируется только для карточки
+  без link: карточка со ссылкой, которую `yi` не разрешил (shortest-path link Obsidian), не
+  перепривязывается.
 - Если для статуса нет секции — секция `## <heading>` создаётся после ближайшей предыдущей
   configured-секции (или перед первой opaque-секцией архива/settings), с пустой строкой
   вокруг.
@@ -329,7 +351,8 @@ issues. Закрытые нужны только для карточек, кот
 ### 6.4 Сравнение заголовков
 
 Заголовок в файловой системе — lossy (`Fix: crash` → `Fix crash`). Поэтому title считается
-расходящимся, только если `sanitize(remote) != sanitize(local)`. Иначе после каждого pull
+расходящимся, только если `sanitize(remote) != sanitize(local)` (обе стороны — без
+метаданных карточки, §6.2). Иначе после каждого pull
 был бы вечный drift, а push затирал бы `:` в remote.
 
 ### 6.5 Remote → local статус
@@ -337,7 +360,8 @@ issues. Закрытые нужны только для карточек, кот
 `config.StatusOf(issue)`:
 
 1. `closed` → статус с `closeIssue: true`.
-2. `open` + status-labels → первый в порядке конфига статус, чей label есть у issue. Если
+2. `open` + status-labels → первый в порядке конфига статус, чей label есть у issue (labels
+   сравниваются без учёта регистра, как в GitHub; `SetStatus` удаляет label в написании issue). Если
    status-labels несколько — warning в `status`/`pull`.
 3. `open` без status-label → `defaultStatus`.
 
@@ -423,9 +447,11 @@ Open issues не на доске → не трогаются (видны в `sta
 
 ### 6.7 Команды `new` / `start` / `done`
 
-**`yi new "<title>" [--status <key>] [--body <text>]`** — `CreateIssue` (label статуса,
-default `defaultStatus`) → note (всегда, это явный запрос) → `AddCard` → запись. Выводит
-`#id`, URL и путь note.
+**`yi new "<title>" [--status <key>] [--body <text>]`** — `provider.CreateIssue` (label
+статуса, default `defaultStatus`; для статуса с `closeIssue` — сразу close) → `AddCard`
+(`WithNote` всегда, это явный запрос) → запись. Неудачный create ничего не пишет в
+`Kanban.md` (нет карточки без id, из которой push сделал бы дубликат); неудачный close —
+карточка всё равно добавляется, затем возвращается ошибка. Выводит `#id`, URL и путь note.
 
 **`yi start <id> [--type <t>] [--no-branch]`**
 
@@ -444,7 +470,8 @@ default `defaultStatus`) → note (всегда, это явный запрос)
 ✓ Switched to feat/42-yandex-oauth
 ```
 
-**`yi done <id>`** — карточка → `doneStatus` + `[x]`; remote: label `doneStatus` + close.
+**`yi done <id>`** — карточка → `doneStatus` + `[x]` (и для неотмеченной карточки, уже
+стоящей в `doneStatus`); remote: label `doneStatus` + close.
 
 ### 6.8 Имена веток (`internal/branch`)
 
@@ -487,7 +514,8 @@ yi [--project <dir>] [-v] <command>
 
 - `<id>` принимает `42` и `#42`.
 - Exit codes: `0` успех; `1` ошибка; `2` ошибка использования (cobra).
-- `-v` — логирование HTTP-запросов и git-команд в stderr.
+- `-v` — печатает в stderr путь загруженного конфига и счётчики remote issues (open,
+  догруженные по одной, не найденные).
 - `ctx` с `signal.NotifyContext` (Ctrl+C отменяет сетевые запросы; локальная запись атомарна).
 
 ## 8. Обработка ошибок
@@ -519,7 +547,8 @@ yi [--project <dir>] [-v] <command>
   dir: идемпотентность (второй прогон = пустой план), сбой на N-й операции (fake с
   инъекцией ошибки) → id сохранены, повтор не плодит issues.
 - **provider/providertest** — conformance suite: `Run(t, newProvider func(t) IssueProvider)`.
-  Проверяет create/get/list/update labels/close/reopen/ErrNotFound/фильтрацию PR. Гоняется
+  Проверяет create/get/list/update labels/close/reopen/ErrNotFound (фильтрация PR —
+  в тестах конкретного провайдера). Гоняется
   против `fake` и против `github` поверх `httptest.Server`, эмулирующего нужные эндпоинты.
   Каждый будущий провайдер обязан проходить этот suite.
 - **gitrepo** — на временном репозитории (`git init` в `t.TempDir()`), пропуск, если `git`
