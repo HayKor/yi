@@ -4,7 +4,6 @@ import (
 	"sort"
 
 	"kanban-sync/internal/domain"
-	"kanban-sync/internal/notes"
 )
 
 // RowKind classifies one line of `yi status` output.
@@ -76,7 +75,7 @@ func Status(in Input) ([]Row, []string) {
 		to, warns := in.Cfg.StatusOf(remote)
 		warn.add(warns...)
 
-		titleDiff := notes.Sanitize(remote.Title) != notes.Sanitize(localTitle(card))
+		titleDiff := titlesDiffer(remote.Title, localTitle(card))
 		kind := RowOK
 		if to != card.Status || titleDiff {
 			kind = RowDiff

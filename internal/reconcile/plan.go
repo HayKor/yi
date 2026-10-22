@@ -19,7 +19,8 @@ import (
 // alias the card's wikilink currently displays. Without this, an
 // aliased card like "[[Tasks/42 Yandex OAuth|OAuth]]" would never
 // match a remote title of "Yandex OAuth" and would drift forever
-// (controller ruling, alias drift). Unlinked cards use Title as-is.
+// (controller ruling, alias drift). Unlinked cards use Title as-is,
+// which never contains metadata tokens (kanban.Card.Meta).
 func localTitle(c *kanban.Card) string {
 	if c.Link == "" {
 		return c.Title
@@ -27,6 +28,26 @@ func localTitle(c *kanban.Card) string {
 	base := path.Base(c.Link)
 	prefix := strconv.Itoa(c.IssueID) + " "
 	return strings.TrimPrefix(base, prefix)
+}
+
+// cleanTitle is a remote issue title as yi writes it locally — onto a
+// card or into a note filename: without Obsidian Kanban metadata tokens
+// (an issue titled "Fix login @{2026-10-30}" must not put a date on the
+// card or in a filename). If nothing but metadata is left, the title is
+// used as-is.
+func cleanTitle(remote string) string {
+	if t := kanban.StripMeta(remote); t != "" {
+		return t
+	}
+	return remote
+}
+
+// titlesDiffer reports whether a remote and a local title really
+// differ (spec §6.4): only if they still differ once metadata tokens
+// are dropped (a local title never has them — see kanban.Card.Title)
+// and both are sanitized like a filename.
+func titlesDiffer(remote, local string) bool {
+	return notes.Sanitize(kanban.StripMeta(remote)) != notes.Sanitize(kanban.StripMeta(local))
 }
 
 // Input bundles everything the planner needs: the config, the parsed
@@ -119,11 +140,14 @@ func PlanPull(in Input) Plan {
 			changes = append(changes, MoveCard{Card: card, From: card.Status, To: to})
 		}
 		local := localTitle(card)
-		if notes.Sanitize(remote.Title) != notes.Sanitize(local) {
-			changes = append(changes, RenameLocal{Card: card, ID: id, From: local, To: remote.Title})
+		if titlesDiffer(remote.Title, local) {
+			changes = append(changes, RenameLocal{Card: card, ID: id, From: local, To: cleanTitle(remote.Title)})
 		}
-		if in.Cfg.Notes == config.NotesAlways && !in.HasNote(card) {
-			changes = append(changes, LinkNote{Card: card, ID: id, Title: remote.Title})
+		// Only a link-less card gets a note linked: a card that already
+		// has a [[link]] yi can't resolve (an Obsidian shortest-path
+		// link, a note elsewhere in the vault) keeps it.
+		if in.Cfg.Notes == config.NotesAlways && card.Link == "" && !in.HasNote(card) {
+			changes = append(changes, LinkNote{Card: card, ID: id, Title: cleanTitle(remote.Title)})
 		}
 	}
 
@@ -197,7 +221,7 @@ func PlanPush(in Input) Plan {
 			changes = append(changes, SetStatus{ID: id, From: from, To: card.Status, Update: upd})
 		}
 		local := localTitle(card)
-		if notes.Sanitize(remote.Title) != notes.Sanitize(local) {
+		if titlesDiffer(remote.Title, local) {
 			changes = append(changes, RenameRemote{ID: id, From: remote.Title, To: local})
 		}
 	}
@@ -210,7 +234,9 @@ func PlanPush(in Input) Plan {
 // carry it, remove every other configured status label it does carry
 // (non-status labels are left alone), and close/reopen it if `to`'s
 // CloseIssue disagrees with the issue's current state. ok is false if
-// none of that is necessary.
+// none of that is necessary. Labels are compared case-insensitively,
+// as GitHub does, and a label is removed under the issue's own
+// spelling of it.
 func RemoteUpdateFor(cfg *config.Config, is domain.Issue, to domain.StatusKey) (provider.IssueUpdate, bool) {
 	toStatus, found := cfg.Status(to)
 	if !found {
@@ -224,11 +250,11 @@ func RemoteUpdateFor(cfg *config.Config, is domain.Issue, to domain.StatusKey) (
 
 	var remove []string
 	for _, label := range cfg.StatusLabels() {
-		if label == toStatus.Label {
+		if strings.EqualFold(label, toStatus.Label) {
 			continue
 		}
-		if is.HasLabel(label) {
-			remove = append(remove, label)
+		if actual, ok := is.FindLabel(label); ok {
+			remove = append(remove, actual)
 		}
 	}
 

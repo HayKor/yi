@@ -176,22 +176,6 @@ func (b *Board) SetTitle(c *Card, text string) error {
 	return nil
 }
 
-// RewriteFirstLine replaces c's first line wholesale and re-parses its
-// fields. Deprecated: it drops the card's metadata (dates, tags); use
-// SetTitle. Kept only until reconcile stops calling it.
-func (b *Board) RewriteFirstLine(c *Card, line string) error {
-	if !isSingleLine(line) {
-		return fmt.Errorf("card line must be a single line: %q", line)
-	}
-	if !isCardStart(line) {
-		return fmt.Errorf("not a card line: %q", line)
-	}
-	_, eol := splitEOL(c.lines[0])
-	c.lines[0] = line + eol
-	refreshFields(c)
-	return nil
-}
-
 // statusByKey returns the configured status with the given key.
 func statusByKey(statuses []domain.Status, key domain.StatusKey) (domain.Status, bool) {
 	for _, s := range statuses {

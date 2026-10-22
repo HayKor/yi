@@ -59,7 +59,11 @@ func (a *Applier) Apply(ctx context.Context, p Plan) error {
 			applyErr = err
 			break
 		}
-		if err := a.applyOne(ctx, c, &created, log); err != nil {
+		err := a.applyOne(ctx, c, &created, log)
+		if errors.Is(err, errSkipped) {
+			continue // already warned; nothing was applied
+		}
+		if err != nil {
 			applyErr = err
 			break
 		}
@@ -78,6 +82,11 @@ func (a *Applier) Apply(ctx context.Context, p Plan) error {
 		return saveErr
 	}
 }
+
+// errSkipped is returned by a change's apply step when it deliberately
+// did nothing (after logging a warning saying why): Apply then neither
+// prints a "✓" line for it nor counts it as applied.
+var errSkipped = errors.New("change skipped")
 
 // applyOne applies a single change, recording any issue it creates
 // into *created and writing a warning (if any) to log.
@@ -124,67 +133,71 @@ func ApplyMoveCard(cfg *config.Config, b *kanban.Board, c *kanban.Card, to domai
 }
 
 // applyAddCard implements AddCard: create a task note first (if
-// WithNote), then add the canonical card line to column To.
+// WithNote), then add the canonical card line to column To. The card
+// and note use the issue title without metadata tokens (cleanTitle).
 func (a *Applier) applyAddCard(v AddCard) error {
 	toStatus, ok := a.Cfg.Status(v.To)
 	if !ok {
 		return fmt.Errorf("unknown status %q", v.To)
 	}
+	title := cleanTitle(v.Issue.Title)
 
 	var link string
 	if v.WithNote {
-		notePath, err := a.Notes.Create(a.Index, v.Issue.ID, v.Issue.Title)
+		notePath, err := a.Notes.Create(a.Index, v.Issue.ID, title)
 		if err != nil {
 			return err
 		}
 		link = a.Notes.LinkTarget(notePath)
 	}
 
-	line := kanban.FormatCard(toStatus.CloseIssue, v.Issue.Title, link, v.Issue.ID)
+	line := kanban.FormatCard(toStatus.CloseIssue, title, link, v.Issue.ID)
 	_, err := a.Board.Add(v.To, line)
 	return err
 }
 
-// applyLinkNote implements LinkNote: create the note, then rewrite
-// the card's first line so it links to it.
+// applyLinkNote implements LinkNote: create the note, then replace the
+// card's title with a link to it, keeping its dates, tags and id.
 func (a *Applier) applyLinkNote(v LinkNote) error {
 	notePath, err := a.Notes.Create(a.Index, v.ID, v.Title)
 	if err != nil {
 		return err
 	}
-	link := a.Notes.LinkTarget(notePath)
-	line := kanban.FormatCard(v.Card.Checked, v.Title, link, v.ID)
-	return a.Board.RewriteFirstLine(v.Card, line)
+	return a.Board.SetTitle(v.Card, wikilink(a.Notes.LinkTarget(notePath)))
 }
 
-// applyRenameLocal implements RenameLocal: if the card has a note,
-// rename it (keeping the card's alias, if any) and warn that other
-// vault links to the old title weren't updated. If the card has no
-// link at all, it's a plain card and its first line is simply
-// rewritten. But if the card does have a link and nothing resolves
-// it (the note was deleted, moved, or never existed), the card is
-// left exactly as it was rather than being silently rewritten into a
-// plain, link-less card — only a warning is logged.
+// wikilink formats a note link target as "[[target]]".
+func wikilink(target string) string {
+	return "[[" + target + "]]"
+}
+
+// applyRenameLocal implements RenameLocal. A linked card's note is
+// renamed (keeping the card's alias, if any) and the link updated, with
+// a warning that other vault links to the old title weren't updated. If
+// the card has a link but nothing resolves it (the note was deleted,
+// moved, or never existed), the card is left exactly as it was rather
+// than being silently rewritten into a plain, link-less card: only a
+// warning is logged and the change counts as skipped. A plain card just
+// gets its title replaced (keeping its dates, tags and id), and its
+// note, if one exists unlinked, is renamed along with it.
 func (a *Applier) applyRenameLocal(v RenameLocal, log io.Writer) error {
 	notePath, ok := a.Notes.Resolve(a.Index, v.ID, v.Card.Link)
-	if !ok {
-		if v.Card.Link != "" {
-			fmt.Fprintf(log, "warning: #%d: note %q not found; card not renamed\n", v.ID, v.Card.Link)
-			return nil
-		}
-		line := kanban.FormatCard(v.Card.Checked, v.To, "", v.ID)
-		return a.Board.RewriteFirstLine(v.Card, line)
+	if !ok && v.Card.Link != "" {
+		fmt.Fprintf(log, "warning: #%d: note %q not found; card not renamed\n", v.ID, v.Card.Link)
+		return errSkipped
 	}
 
-	newPath, err := a.Notes.Rename(a.Index, notePath, v.ID, v.From, v.To)
-	if err != nil {
-		return err
+	if ok {
+		newPath, err := a.Notes.Rename(a.Index, notePath, v.ID, v.From, v.To)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(log, "warning: other links to %q were not updated\n", v.From)
+		if v.Card.Link != "" {
+			return a.Board.SetLink(v.Card, a.Notes.LinkTarget(newPath))
+		}
 	}
-	if err := a.Board.SetLink(v.Card, a.Notes.LinkTarget(newPath)); err != nil {
-		return err
-	}
-	fmt.Fprintf(log, "warning: other links to %q were not updated\n", v.From)
-	return nil
+	return a.Board.SetTitle(v.Card, v.To)
 }
 
 // applyCreateIssue implements CreateIssue: create the remote issue,
@@ -223,9 +236,7 @@ func (a *Applier) applyCreateIssue(ctx context.Context, v CreateIssue, created *
 		if err != nil {
 			return err
 		}
-		link := a.Notes.LinkTarget(notePath)
-		line := kanban.FormatCard(v.Card.Checked, v.Title, link, id)
-		if err := a.Board.RewriteFirstLine(v.Card, line); err != nil {
+		if err := a.Board.SetTitle(v.Card, wikilink(a.Notes.LinkTarget(notePath))); err != nil {
 			return err
 		}
 	}
