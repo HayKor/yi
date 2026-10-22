@@ -185,3 +185,21 @@ func TestPushCreateForeignLinkUsesAliasAndIsSteady(t *testing.T) {
 	assertDocUntouched(t, doc)
 	assertSteady(t, cfg, p)
 }
+
+// A remote title with nothing usable as an alias is skipped with a
+// warning instead of failing every pull.
+func TestForeignLinkPullRenameEmptyAliasSkipped(t *testing.T) {
+	src := "## Backlog\n\n- [ ] [[Design doc|Login work]] `#7`\n\n## Todo\n\n## In Progress\n\n## Completed\n"
+	cfg, doc := foreignLinkProject(t, src)
+	p := fake.New()
+	p.Seed(domain.Issue{ID: 7, Title: "[]", State: domain.IssueOpen, Labels: []string{"status:backlog"}})
+
+	_, log := syncRoundLog(t, cfg, p, false)
+	if !strings.Contains(log, "warning: #7") || strings.Contains(log, "✓") {
+		t.Errorf("log = %q, want a warning and no ✓ line", log)
+	}
+	if got := readKanban(t, cfg); got != src {
+		t.Errorf("Kanban.md = %q, want unchanged", got)
+	}
+	assertDocUntouched(t, doc)
+}

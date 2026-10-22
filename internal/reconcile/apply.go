@@ -185,7 +185,12 @@ func wikilink(target string) string {
 // id), and its note, if one exists unlinked, is renamed along with it.
 func (a *Applier) applyRenameLocal(v RenameLocal, log io.Writer) error {
 	if v.Card.Link != "" && !managedLink(v.Card) {
-		return a.Board.SetAlias(v.Card, aliasText(v.To))
+		alias := aliasText(v.To)
+		if alias == "" {
+			fmt.Fprintf(log, "warning: #%d: title %q can't be a link alias; card not renamed\n", v.ID, v.To)
+			return errSkipped
+		}
+		return a.Board.SetAlias(v.Card, alias)
 	}
 
 	notePath, ok := a.Notes.Resolve(a.Index, v.ID, v.Card.Link)
