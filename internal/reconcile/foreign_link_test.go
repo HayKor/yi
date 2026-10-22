@@ -9,6 +9,7 @@ import (
 
 	"kanban-sync/internal/config"
 	"kanban-sync/internal/domain"
+	"kanban-sync/internal/provider"
 	"kanban-sync/internal/provider/fake"
 )
 
@@ -202,4 +203,48 @@ func TestForeignLinkPullRenameEmptyAliasSkipped(t *testing.T) {
 		t.Errorf("Kanban.md = %q, want unchanged", got)
 	}
 	assertDocUntouched(t, doc)
+}
+
+// A yi note whose title sanitizes to nothing is named "<id>.md"
+// (notes.filenameFor), so "[[Tasks/7]]" on #7 is yi-managed too: no
+// alias is ever added, and a later rename moves the note to
+// "7 <title>.md".
+func TestBareIDLinkIsManaged(t *testing.T) {
+	dir := t.TempDir()
+	cfg := applyTestConfig(t, dir, "always")
+	writeKanban(t, cfg.KanbanPath, "## Backlog\n\n## Todo\n\n## In Progress\n\n## Completed\n")
+	p := fake.New()
+	p.Seed(domain.Issue{ID: 7, Title: "???", State: domain.IssueOpen, Labels: []string{"status:backlog"}})
+
+	syncRound(t, cfg, p, false)
+	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/7]] `#7`\n"; !strings.Contains(got, want) {
+		t.Fatalf("Kanban.md = %q, want it to contain %q", got, want)
+	}
+	assertSteady(t, cfg, p)
+	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/7]] `#7`\n"; !strings.Contains(got, want) {
+		t.Errorf("Kanban.md = %q after re-sync, want it to still contain %q (no alias)", got, want)
+	}
+
+	title := "Real title"
+	if _, err := p.UpdateIssue(context.Background(), 7, provider.IssueUpdate{Title: &title}); err != nil {
+		t.Fatal(err)
+	}
+	syncRound(t, cfg, p, false)
+	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/7 Real title]] `#7`\n"; !strings.Contains(got, want) {
+		t.Errorf("Kanban.md = %q, want it to contain %q", got, want)
+	}
+	if entries, _ := os.ReadDir(cfg.TasksDir); len(entries) != 1 || entries[0].Name() != "7 Real title.md" {
+		t.Errorf("Tasks/ = %v, want only 7 Real title.md", entries)
+	}
+	assertSteady(t, cfg, p)
+}
+
+func TestLocalTitleBareIDLink(t *testing.T) {
+	board := buildBoard(t, "## Backlog\n\n- [ ] [[Tasks/7]] `#7`\n- [ ] [[Tasks/8]] `#9`\n")
+	if got := localTitle(board.Cards()[0]); got != "" {
+		t.Errorf("[[Tasks/7]] on #7: localTitle = %q, want %q", got, "")
+	}
+	if got := localTitle(board.Cards()[1]); got != "8" {
+		t.Errorf("[[Tasks/8]] on #9: localTitle = %q, want the basename %q", got, "8")
+	}
 }

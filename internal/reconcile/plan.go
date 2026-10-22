@@ -16,11 +16,17 @@ import (
 
 // managedLink reports whether c's link points to a note yi manages:
 // its basename starts with "<id> " for the card's own id
-// ("[[Tasks/42 Yandex OAuth]]" on #42). Any other link is the user's
-// own (an Obsidian shortest-path link to a design doc, say): yi never
-// renames its file or rewrites its target, only the card's alias.
+// ("[[Tasks/42 Yandex OAuth]]" on #42), or is exactly "<id>" (the name
+// notes.Create gives a note whose title sanitizes to nothing). Any
+// other link is the user's own (an Obsidian shortest-path link to a
+// design doc, say): yi never renames its file or rewrites its target,
+// only the card's alias.
 func managedLink(c *kanban.Card) bool {
-	return c.Link != "" && strings.HasPrefix(path.Base(c.Link), strconv.Itoa(c.IssueID)+" ")
+	if c.Link == "" {
+		return false
+	}
+	base, id := path.Base(c.Link), strconv.Itoa(c.IssueID)
+	return base == id || strings.HasPrefix(base, id+" ")
 }
 
 // localTitle returns the title to use for sync comparisons. For a
@@ -37,7 +43,11 @@ func localTitle(c *kanban.Card) string {
 	case c.Link == "":
 		return c.Title
 	case managedLink(c):
-		return strings.TrimPrefix(path.Base(c.Link), strconv.Itoa(c.IssueID)+" ")
+		base, id := path.Base(c.Link), strconv.Itoa(c.IssueID)
+		if base == id {
+			return "" // "<id>.md": the title sanitized to nothing
+		}
+		return strings.TrimPrefix(base, id+" ")
 	case c.Alias != "":
 		return c.Alias
 	default:
