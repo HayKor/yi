@@ -39,6 +39,16 @@ make release-snapshot   # goreleaser release --snapshot --clean
 
 ## Быстрый старт
 
+```sh
+cd ~/Obsidian/01_Projects/MyApp
+yi init          # создаёт .issue-sync.yml и Kanban.md (существующие файлы не трогает)
+# впишите свой репозиторий в строку "repository:" в .issue-sync.yml
+yi pull          # подтягивает все открытые issues на доску
+```
+
+`yi init` создаёт конфиг с четырьмя колонками (Backlog, Todo, In Progress, Done) и пустую
+доску плагина Obsidian Kanban с теми же колонками. Папку `Tasks/` создаст `yi pull`.
+
 ### Структура проекта
 
 ```text
@@ -114,6 +124,12 @@ gh auth login
 Общие флаги: `--project <dir>` (каталог проекта), `-v` / `--verbose` (печатает в stderr путь
 загруженного конфига и сколько issues пришло из remote: open, догруженные по одной, не найденные). Коды возврата: `0` успех, `1` ошибка выполнения, `2` ошибка
 использования (неверные флаги/аргументы). `<id>` принимает и `42`, и `#42`.
+
+### `yi init`
+
+Создаёт в каталоге проекта (текущем или из `--project`) стартовые `.issue-sync.yml` и
+`Kanban.md`. Уже существующий файл не перезаписывается (`skipped Kanban.md (already exists)`).
+Не ходит в сеть и не трогает git.
 
 ### `yi status`
 

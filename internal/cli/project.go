@@ -53,7 +53,7 @@ func loadProject(ctx context.Context, d Deps, flag string) (*project, error) {
 	data, hash, err := kanban.ReadFile(cfg.KanbanPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("Kanban.md not found at %s", cfg.KanbanPath)
+			return nil, fmt.Errorf("Kanban.md not found at %s (run \"yi init\" to create one)", cfg.KanbanPath)
 		}
 		return nil, err
 	}

@@ -93,6 +93,7 @@ func NewRootCommand(d Deps) *cobra.Command {
 	})
 
 	root.AddCommand(newVersionCommand(d))
+	root.AddCommand(newInitCommand(d))
 	root.AddCommand(newStatusCommand(d))
 	root.AddCommand(newPullCommand(d))
 	root.AddCommand(newPushCommand(d))
