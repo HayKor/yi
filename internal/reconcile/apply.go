@@ -256,9 +256,10 @@ func (a *Applier) applyCreateIssue(ctx context.Context, v CreateIssue, created *
 // save writes the board back to Cfg.KanbanPath if (and only if) it
 // changed, detecting a concurrent edit the same way WriteFileAtomic
 // always does: by re-hashing the file right before renaming over it.
-// On that conflict, it tells the user which issues Apply created so
-// they can be added to their cards by hand, since the board that
-// would have recorded them can't be written.
+// On that conflict, it says that nothing was saved (the "✓" lines for
+// local changes are already printed) and tells the user which issues
+// Apply created so they can be added to their cards by hand, since the
+// board that would have recorded them can't be written.
 func (a *Applier) save(created []createdIssue, log io.Writer) error {
 	data := a.Board.Bytes()
 	if sha256.Sum256(data) == a.BoardHash {
@@ -267,6 +268,9 @@ func (a *Applier) save(created []createdIssue, log io.Writer) error {
 
 	if err := kanban.WriteFileAtomic(a.Cfg.KanbanPath, data, a.BoardHash); err != nil {
 		if errors.Is(err, kanban.ErrModified) {
+			// The "✓" lines for local changes were already printed;
+			// none of them reached the file.
+			fmt.Fprintln(log, "warning: Kanban.md was changed by someone else during sync; nothing was saved to it, so the local board changes above were NOT applied")
 			for _, ci := range created {
 				fmt.Fprintf(log, "add %q to card %q manually\n", fmt.Sprintf("#%d", ci.id), ci.title)
 			}

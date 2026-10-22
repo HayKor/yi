@@ -561,7 +561,7 @@ func TestApplyAbortsOnConcurrentEdit(t *testing.T) {
 	p := fake.New()
 	p.Seed(domain.Issue{ID: 57, Title: "Some title", State: domain.IssueOpen, Labels: []string{"status:in-progress"}})
 
-	a, board, _ := newApplier(t, cfg, p)
+	a, board, logBuf := newApplier(t, cfg, p)
 	ctx := context.Background()
 	remote, missing, err := FetchRemote(ctx, p, board)
 	if err != nil {
@@ -589,7 +589,16 @@ func TestApplyAbortsOnConcurrentEdit(t *testing.T) {
 	if string(data) != externalEdit {
 		t.Errorf("Kanban.md = %q, want the external edit left untouched", data)
 	}
+
+	// The "✓ move" line was printed before the save failed: the log
+	// must say that it never reached Kanban.md (residual review R4).
+	if got := logBuf.String(); !strings.Contains(got, "✓ #57") || !strings.Contains(got, notSavedLine) {
+		t.Errorf("Log = %q, want the ✓ line followed by %q", got, notSavedLine)
+	}
 }
+
+// notSavedLine is what Apply logs when the save hits kanban.ErrModified.
+const notSavedLine = "warning: Kanban.md was changed by someone else during sync; nothing was saved to it, so the local board changes above were NOT applied\n"
 
 func TestPushConcurrentEditPrintsCreatedIDs(t *testing.T) {
 	dir := t.TempDir()
@@ -618,6 +627,9 @@ func TestPushConcurrentEditPrintsCreatedIDs(t *testing.T) {
 
 	if got := logBuf.String(); !strings.Contains(got, `add "#1" to card "New thing" manually`) {
 		t.Errorf("Log = %q, want it to mention adding #1 to %q manually", got, "New thing")
+	}
+	if got := logBuf.String(); !strings.Contains(got, notSavedLine+`add "#1"`) {
+		t.Errorf("Log = %q, want %q right before the manual-id lines", got, notSavedLine)
 	}
 
 	data, err := os.ReadFile(cfg.KanbanPath)
