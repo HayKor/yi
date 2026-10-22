@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"kanban-sync/internal/domain"
+	"kanban-sync/internal/kanban"
 	"kanban-sync/internal/provider"
 	"kanban-sync/internal/reconcile"
 )
@@ -78,7 +79,13 @@ func runNew(cmd *cobra.Command, d Deps, titleArg, statusFlag, body string) error
 		reconcile.AddCard{Issue: issue, To: statusKey, WithNote: true},
 	}}
 	if err := p.applier(io.Discard).Apply(ctx, plan); err != nil {
-		return errors.Join(fmt.Errorf("#%d %s was created, but adding its card failed (run yi pull to add it): %w", id, issue.URL, err), closeErr)
+		advice := "run yi pull to add it"
+		if st.CloseIssue && closeErr == nil {
+			// pull never adds a card for a closed issue: say exactly
+			// which line to add by hand.
+			advice = fmt.Sprintf("add this line under %q: %s", "## "+st.Heading, manualCardLine(title, id))
+		}
+		return errors.Join(fmt.Errorf("#%d %s was created, but adding its card failed (%s): %w", id, issue.URL, advice, err), closeErr)
 	}
 
 	notePath, ok := p.store.Resolve(p.index, id, "")
@@ -93,4 +100,13 @@ func runNew(cmd *cobra.Command, d Deps, titleArg, statusFlag, body string) error
 	fmt.Fprintf(d.Stdout, "✓ Created #%d %s\n", id, issue.URL)
 	fmt.Fprintf(d.Stdout, "✓ Note %s\n", filepath.ToSlash(relPath))
 	return closeErr
+}
+
+// manualCardLine is the plain, checked card line for a closed issue,
+// with the title as yi would write it on a card (no metadata tokens).
+func manualCardLine(title string, id int) string {
+	if t := kanban.StripMeta(title); t != "" {
+		title = t
+	}
+	return kanban.FormatCard(true, title, "", id)
 }
