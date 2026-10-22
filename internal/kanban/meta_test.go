@@ -130,3 +130,69 @@ func TestSetTitleRejectsMultilineText(t *testing.T) {
 		t.Errorf("extra cards smuggled in: %q", b.Bytes())
 	}
 }
+
+func TestCardAlias(t *testing.T) {
+	cases := map[string]string{
+		"- [ ] [[Design doc|Login work]] `#7`":    "Login work",
+		"- [ ] [[Design doc]] `#7`":               "",
+		"- [ ] [[Tasks/42 Yandex OAuth|OAuth]]":   "OAuth",
+		"- [ ] Plain `#3`":                        "",
+		"- [ ] Ship @[[2026-11-02]] [[Note|N]] x": "N",
+	}
+	for line, want := range cases {
+		if got := parseSingleCard(t, line).Alias; got != want {
+			t.Errorf("%q: Alias = %q, want %q", line, got, want)
+		}
+	}
+}
+
+// SetAlias rewrites only the alias of the card's link (adding one if
+// the link has none): the target, dates, tags and id stay (residual
+// review R3, cards linking the user's own notes).
+func TestSetAlias(t *testing.T) {
+	cases := []struct {
+		name, line, text, want string
+	}{
+		{"replace alias", "- [ ] [[Design doc|Login work]] @{2026-10-30} `#7`", "Login v2", "- [ ] [[Design doc|Login v2]] @{2026-10-30} `#7`"},
+		{"add alias", "- [x] #auth [[Docs/Design doc]] `#7`", "Login v2", "- [x] #auth [[Docs/Design doc|Login v2]] `#7`"},
+		{"date link untouched", "- [ ] @[[2026-11-02]] [[Design doc]] `#7`", "New", "- [ ] @[[2026-11-02]] [[Design doc|New]] `#7`"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			src := "## Backlog\n\n" + c.line + "\n\tcontinuation\n"
+			b, err := Parse([]byte(src), testStatuses())
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			card := b.Cards()[0]
+			if err := b.SetAlias(card, c.text); err != nil {
+				t.Fatalf("SetAlias: %v", err)
+			}
+			if got, want := string(b.Bytes()), "## Backlog\n\n"+c.want+"\n\tcontinuation\n"; got != want {
+				t.Errorf("Bytes() =\n%q\nwant\n%q", got, want)
+			}
+			if card.Alias != c.text || card.Title != c.text {
+				t.Errorf("fields not refreshed: Alias=%q Title=%q, want %q", card.Alias, card.Title, c.text)
+			}
+		})
+	}
+}
+
+func TestSetAliasRejects(t *testing.T) {
+	b, err := Parse([]byte("## Backlog\n\n- [ ] Plain `#3`\n- [ ] [[Design doc]] `#7`\n"), testStatuses())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	before := string(b.Bytes())
+	if err := b.SetAlias(b.Cards()[0], "x"); err == nil {
+		t.Errorf("SetAlias on a link-less card: want error")
+	}
+	for _, text := range []string{"", "a\nb", "a]]b", "a]b"} {
+		if err := b.SetAlias(b.Cards()[1], text); err == nil {
+			t.Errorf("SetAlias(%q): want error", text)
+		}
+	}
+	if got := string(b.Bytes()); got != before {
+		t.Errorf("board changed after rejected SetAlias: %q", got)
+	}
+}

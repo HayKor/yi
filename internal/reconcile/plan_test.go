@@ -469,8 +469,11 @@ func TestPlanPushCreateLinkedCardSkipsNote(t *testing.T) {
 	if ci.WithNote {
 		t.Errorf("CreateIssue.WithNote = true, want false: the card already has its own link")
 	}
-	if ci.Title != "Draft idea" {
-		t.Errorf("CreateIssue.Title = %q, want %q (from the link, not the alias)", ci.Title, "Draft idea")
+	// "Tasks/Draft idea" isn't a yi-managed note name ("<id> Title"),
+	// so the card's title is its alias (residual review R3) — the same
+	// title later pushes compare against once the card has an id.
+	if ci.Title != "Idea" {
+		t.Errorf("CreateIssue.Title = %q, want %q (the alias of a link yi doesn't manage)", ci.Title, "Idea")
 	}
 }
 

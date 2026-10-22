@@ -430,3 +430,89 @@ func TestRenameCaseOnlyOnCaseInsensitiveFS(t *testing.T) {
 		t.Errorf("idx[42] = %q, want %q", idx.byID[42], newPath)
 	}
 }
+
+// writeNote creates dir/rel (and its parent directories) with a stub
+// body, returning its path.
+func writeNote(t *testing.T, dir, rel string) string {
+	t.Helper()
+	p := filepath.Join(dir, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("# stub\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// Obsidian writes shortest-path links ("[[Design doc]]" for
+// "Docs/Design doc.md"): a slash-less link resolves to a unique file
+// with that basename anywhere under ProjectDir (residual review R3).
+func TestResolveShortestPathLink(t *testing.T) {
+	t.Run("unique basename", func(t *testing.T) {
+		dir := t.TempDir()
+		want := writeNote(t, dir, "Docs/Specs/Design doc.md")
+		writeNote(t, dir, "Docs/design doc v2.md")
+		s := NewStore(dir, filepath.Join(dir, "Tasks"))
+		got, ok := s.Resolve(nil, 7, "Design doc")
+		if !ok || got != want {
+			t.Errorf("Resolve = %q, %v; want %q, true", got, ok, want)
+		}
+	})
+
+	t.Run("basename match is case-sensitive", func(t *testing.T) {
+		dir := t.TempDir()
+		writeNote(t, dir, "Docs/design doc.md")
+		s := NewStore(dir, filepath.Join(dir, "Tasks"))
+		if got, ok := s.Resolve(nil, 7, "Design doc"); ok {
+			t.Errorf("Resolve = %q, true; want not found", got)
+		}
+	})
+
+	t.Run("ambiguous outside TasksDir is not found, index still used", func(t *testing.T) {
+		dir := t.TempDir()
+		writeNote(t, dir, "A/Design doc.md")
+		writeNote(t, dir, "B/Design doc.md")
+		indexed := writeNote(t, dir, "Tasks/7 Login work.md")
+		s := NewStore(dir, filepath.Join(dir, "Tasks"))
+		idx, err := s.LoadIndex()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, ok := s.Resolve(nil, 7, "Design doc"); ok {
+			t.Errorf("Resolve(no index) = %q, true; want not found", got)
+		}
+		if got, ok := s.Resolve(idx, 7, "Design doc"); !ok || got != indexed {
+			t.Errorf("Resolve(index) = %q, %v; want the index fallback %q", got, ok, indexed)
+		}
+	})
+
+	t.Run("ambiguous prefers the one under TasksDir", func(t *testing.T) {
+		dir := t.TempDir()
+		writeNote(t, dir, "Archive/Design doc.md")
+		want := writeNote(t, dir, "Tasks/old/Design doc.md")
+		s := NewStore(dir, filepath.Join(dir, "Tasks"))
+		if got, ok := s.Resolve(nil, 7, "Design doc"); !ok || got != want {
+			t.Errorf("Resolve = %q, %v; want %q, true", got, ok, want)
+		}
+	})
+
+	t.Run("several under TasksDir is not found", func(t *testing.T) {
+		dir := t.TempDir()
+		writeNote(t, dir, "Tasks/a/Design doc.md")
+		writeNote(t, dir, "Tasks/b/Design doc.md")
+		s := NewStore(dir, filepath.Join(dir, "Tasks"))
+		if got, ok := s.Resolve(nil, 7, "Design doc"); ok {
+			t.Errorf("Resolve = %q, true; want not found", got)
+		}
+	})
+
+	t.Run("a link with a slash is never searched for", func(t *testing.T) {
+		dir := t.TempDir()
+		writeNote(t, dir, "Docs/Design doc.md")
+		s := NewStore(dir, filepath.Join(dir, "Tasks"))
+		if got, ok := s.Resolve(nil, 7, "Other/Design doc"); ok {
+			t.Errorf("Resolve = %q, true; want not found", got)
+		}
+	})
+}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"kanban-sync/internal/config"
 	"kanban-sync/internal/domain"
@@ -171,16 +172,22 @@ func wikilink(target string) string {
 	return "[[" + target + "]]"
 }
 
-// applyRenameLocal implements RenameLocal. A linked card's note is
-// renamed (keeping the card's alias, if any) and the link updated, with
-// a warning that other vault links to the old title weren't updated. If
-// the card has a link but nothing resolves it (the note was deleted,
-// moved, or never existed), the card is left exactly as it was rather
-// than being silently rewritten into a plain, link-less card: only a
-// warning is logged and the change counts as skipped. A plain card just
-// gets its title replaced (keeping its dates, tags and id), and its
-// note, if one exists unlinked, is renamed along with it.
+// applyRenameLocal implements RenameLocal. A card linking a note yi
+// doesn't manage (see managedLink) only gets the new title as its link's
+// alias: the user's note is never renamed and the link target never
+// rewritten. A yi-managed link's note is renamed (keeping the card's
+// alias, if any) and the link updated, with a warning that other vault
+// links to the old title weren't updated. If such a card's note can't
+// be resolved (deleted, moved, never existed), the card is left exactly
+// as it was rather than being silently rewritten into a plain, link-less
+// card: only a warning is logged and the change counts as skipped. A
+// plain card just gets its title replaced (keeping its dates, tags and
+// id), and its note, if one exists unlinked, is renamed along with it.
 func (a *Applier) applyRenameLocal(v RenameLocal, log io.Writer) error {
+	if v.Card.Link != "" && !managedLink(v.Card) {
+		return a.Board.SetAlias(v.Card, aliasText(v.To))
+	}
+
 	notePath, ok := a.Notes.Resolve(a.Index, v.ID, v.Card.Link)
 	if !ok && v.Card.Link != "" {
 		fmt.Fprintf(log, "warning: #%d: note %q not found; card not renamed\n", v.ID, v.Card.Link)
@@ -198,6 +205,13 @@ func (a *Applier) applyRenameLocal(v RenameLocal, log io.Writer) error {
 		}
 	}
 	return a.Board.SetTitle(v.Card, v.To)
+}
+
+// aliasText makes title usable as a wikilink alias: "[" and "]" are
+// dropped (a "]" would end the link). Titles are compared sanitized,
+// which drops them too, so the card stays in sync with the remote.
+func aliasText(title string) string {
+	return strings.Join(strings.Fields(strings.NewReplacer("[", "", "]", "").Replace(title)), " ")
 }
 
 // applyCreateIssue implements CreateIssue: create the remote issue,

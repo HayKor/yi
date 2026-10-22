@@ -18,6 +18,7 @@ type Card struct {
 	IssueID int              // 0 if the card has no `#id` token yet
 	Title   string
 	Link    string // note target ("Tasks/42 Yandex OAuth"), "" if the card has no [[link]]
+	Alias   string // the link's alias ("[[target|alias]]"), "" if it has none
 	Checked bool
 
 	// Meta holds the card's Obsidian Kanban metadata tokens — dates
@@ -174,8 +175,8 @@ func StripMeta(s string) string {
 	return cutSpans(s, metaSpans(s))
 }
 
-// parseCardFirstLine fills in card's Checked, IssueID, Link, Title and
-// Meta fields by parsing content, the card's first line (EOL already
+// parseCardFirstLine fills in card's Checked, IssueID, Link, Alias,
+// Title and Meta fields by parsing content, the card's first line (EOL already
 // stripped). See spec §6.2 for the exact rules.
 func parseCardFirstLine(content string, card *Card) {
 	m := cardStartRe.FindStringSubmatchIndex(content)
@@ -202,6 +203,7 @@ func parseCardFirstLine(content string, card *Card) {
 			alias = rest[linkMatch[4]:linkMatch[5]]
 		}
 		card.Link = target
+		card.Alias = alias
 		if alias != "" {
 			card.Title = alias
 		} else {

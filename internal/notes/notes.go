@@ -181,13 +181,21 @@ func (s *Store) LoadIndex() (*Index, error) {
 
 // Resolve finds the note for an issue, in priority order: (1) link,
 // if non-empty and "<ProjectDir>/<link>.md" exists as a regular file;
-// (2) idx, which already prefers a frontmatter `issue:` match over a
-// filename-prefix match. ok is false if nothing matches.
+// (2) for a link with no "/" (an Obsidian shortest-path link such as
+// "[[Design doc]]"), the file named "<link>.md" anywhere under
+// ProjectDir (see findByBasename); (3) idx, which already prefers a
+// frontmatter `issue:` match over a filename-prefix match. ok is false
+// if nothing matches.
 func (s *Store) Resolve(idx *Index, id int, link string) (path string, ok bool) {
 	if link != "" {
 		candidate := filepath.Join(s.ProjectDir, filepath.FromSlash(link)+".md")
 		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
 			return candidate, true
+		}
+		if !strings.Contains(link, "/") {
+			if p, found := s.findByBasename(link + ".md"); found {
+				return p, true
+			}
 		}
 	}
 	if idx != nil {
@@ -196,6 +204,45 @@ func (s *Store) Resolve(idx *Index, id int, link string) (path string, ok bool) 
 		}
 	}
 	return "", false
+}
+
+// findByBasename looks for a regular file called name anywhere under
+// ProjectDir (exact, case-sensitive name match; dot-directories such as
+// .obsidian and .trash are skipped, and unreadable directories are
+// ignored). A unique match wins; among several, the one under TasksDir
+// wins if it is the only one there; otherwise nothing is found.
+func (s *Store) findByBasename(name string) (string, bool) {
+	var all, inTasks []string
+	_ = filepath.WalkDir(s.ProjectDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if d != nil && d.IsDir() && p != s.ProjectDir {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			if p != s.ProjectDir && strings.HasPrefix(d.Name(), ".") {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != name || !d.Type().IsRegular() {
+			return nil
+		}
+		all = append(all, p)
+		if rel, err := filepath.Rel(s.TasksDir, p); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			inTasks = append(inTasks, p)
+		}
+		return nil
+	})
+	switch {
+	case len(all) == 1:
+		return all[0], true
+	case len(inTasks) == 1:
+		return inTasks[0], true
+	default:
+		return "", false
+	}
 }
 
 // Create returns the note for an issue, creating it from the standard

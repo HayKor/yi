@@ -14,20 +14,35 @@ import (
 	"kanban-sync/internal/provider"
 )
 
-// localTitle returns the title to use for sync comparisons: for a
-// linked card, the title derived from its note link, not whatever
-// alias the card's wikilink currently displays. Without this, an
+// managedLink reports whether c's link points to a note yi manages:
+// its basename starts with "<id> " for the card's own id
+// ("[[Tasks/42 Yandex OAuth]]" on #42). Any other link is the user's
+// own (an Obsidian shortest-path link to a design doc, say): yi never
+// renames its file or rewrites its target, only the card's alias.
+func managedLink(c *kanban.Card) bool {
+	return c.Link != "" && strings.HasPrefix(path.Base(c.Link), strconv.Itoa(c.IssueID)+" ")
+}
+
+// localTitle returns the title to use for sync comparisons. For a
+// yi-managed link it is the title in the note's name, not whatever
+// alias the card's wikilink currently displays: without this, an
 // aliased card like "[[Tasks/42 Yandex OAuth|OAuth]]" would never
 // match a remote title of "Yandex OAuth" and would drift forever
-// (controller ruling, alias drift). Unlinked cards use Title as-is,
-// which never contains metadata tokens (kanban.Card.Meta).
+// (controller ruling, alias drift). For a link to the user's own note
+// it is the card's visible title: the alias, else the link's basename
+// (residual review R3). Unlinked cards use Title as-is, which never
+// contains metadata tokens (kanban.Card.Meta).
 func localTitle(c *kanban.Card) string {
-	if c.Link == "" {
+	switch {
+	case c.Link == "":
 		return c.Title
+	case managedLink(c):
+		return strings.TrimPrefix(path.Base(c.Link), strconv.Itoa(c.IssueID)+" ")
+	case c.Alias != "":
+		return c.Alias
+	default:
+		return path.Base(c.Link)
 	}
-	base := path.Base(c.Link)
-	prefix := strconv.Itoa(c.IssueID) + " "
-	return strings.TrimPrefix(base, prefix)
 }
 
 // cleanTitle is a remote issue title as yi writes it locally — onto a

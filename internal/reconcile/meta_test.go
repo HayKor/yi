@@ -162,16 +162,16 @@ func TestPullRenamePlainCardKeepsMetadata(t *testing.T) {
 // TestShortestPathLinkedCardNeverRelinked: a card linked with an
 // Obsidian shortest-path link that doesn't resolve under <project>/
 // (and has no indexed note) is the user's own link. Pull must not
-// replace it with a new yi note (nor drop its alias or date). The
-// remote title matches the link-derived title (alias-drift ruling), so
-// nothing else is planned either.
+// replace it with a new yi note (nor drop its alias or date). The link
+// isn't yi-managed, so its title is the alias (residual review R3); the
+// remote title matches it, so nothing else is planned either.
 func TestShortestPathLinkedCardNeverRelinked(t *testing.T) {
 	dir := t.TempDir()
 	cfg := applyTestConfig(t, dir, "always")
 	src := "## Backlog\n\n- [ ] [[Design doc|Login work]] @{2026-11-01} `#7`\n\n## Todo\n\n## In Progress\n\n## Completed\n"
 	writeKanban(t, cfg.KanbanPath, src)
 	p := fake.New()
-	p.Seed(domain.Issue{ID: 7, Title: "Design doc", State: domain.IssueOpen, Labels: []string{"status:backlog"}})
+	p.Seed(domain.Issue{ID: 7, Title: "Login work", State: domain.IssueOpen, Labels: []string{"status:backlog"}})
 
 	if plan := syncRound(t, cfg, p, false); !plan.Empty() {
 		t.Errorf("pull = %#v, want none (no LinkNote for a card that already has a link)", plan.Changes)

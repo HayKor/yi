@@ -110,7 +110,7 @@ func TestE2EPushDatedCardNoRename(t *testing.T) {
 func TestE2EShortestPathLinkNotRelinked(t *testing.T) {
 	src := "## Backlog\n\n- [ ] [[Design doc|Login work]] @{2026-11-01} `#7`\n\n## Todo\n\n## In Progress\n\n## Completed\n"
 	env := newTestEnv(t, src)
-	env.prov.Seed(domain.Issue{ID: 7, Title: "Design doc", State: domain.IssueOpen, Labels: []string{"status:backlog"}})
+	env.prov.Seed(domain.Issue{ID: 7, Title: "Login work", State: domain.IssueOpen, Labels: []string{"status:backlog"}})
 
 	env.mustRun("pull")
 	if got := env.kanban(); got != src {

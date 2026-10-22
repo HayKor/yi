@@ -39,7 +39,7 @@ func FormatCard(checked bool, title, link string, id int) string {
 }
 
 // refreshFields re-derives a card's exported fields other than Status
-// and Line (Checked, IssueID, Title, Link, Meta) from lines[0], using Task
+// and Line (Checked, IssueID, Title, Link, Alias, Meta) from lines[0], using Task
 // 4's first-line parser. Every mutator that edits lines[0] calls this
 // afterward so the fields never drift from the text they're
 // supposedly describing.
@@ -48,6 +48,7 @@ func refreshFields(c *Card) {
 	c.IssueID = 0
 	c.Title = ""
 	c.Link = ""
+	c.Alias = ""
 	c.Meta = nil
 	parseCardFirstLine(stripEOL(c.lines[0]), c)
 }
@@ -137,6 +138,28 @@ func (b *Board) SetLink(c *Card, target string) error {
 		repl = "[[" + target + "|" + alias + "]]"
 	}
 
+	c.lines[0] = content[:loc[0]] + repl + content[loc[1]:] + eol
+	refreshFields(c)
+	return nil
+}
+
+// SetAlias sets the alias of c's existing link to text — replacing the
+// alias in "[[target|alias]]", or adding one to "[[target]]" — leaving
+// the target and the rest of the line (dates, tags, id) untouched. It is
+// for a card linking a note yi doesn't manage, whose file yi never
+// renames: the alias is the card's visible title. It errors if the card
+// has no link, or if text is empty, spans lines, or contains "]" (which
+// would end the link).
+func (b *Board) SetAlias(c *Card, text string) error {
+	if text == "" || !isSingleLine(text) || strings.Contains(text, "]") {
+		return fmt.Errorf("invalid link alias: %q", text)
+	}
+	content, eol := splitEOL(c.lines[0])
+	loc := findLink(content)
+	if c.Link == "" || loc == nil {
+		return fmt.Errorf("card has no link to update: %q", content)
+	}
+	repl := "[[" + content[loc[2]:loc[3]] + "|" + text + "]]"
 	c.lines[0] = content[:loc[0]] + repl + content[loc[1]:] + eol
 	refreshFields(c)
 	return nil
