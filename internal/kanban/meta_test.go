@@ -28,6 +28,15 @@ func TestCardTitleExcludesMetadata(t *testing.T) {
 		{"- [ ] [[Tasks/5 Write docs]] @{2026-11-01} `#5`", "Write docs", []string{"@{2026-11-01}"}, 5, "Tasks/5 Write docs"},
 		{"- [ ] [[Design doc#Login|Login work]] #auth `#7`", "Login work", []string{"#auth"}, 7, "Design doc#Login"},
 		{"- [ ] @[[2026-11-02]] [[Tasks/8 Real]] `#8`", "Real", []string{"@[[2026-11-02]]"}, 8, "Tasks/8 Real"},
+		// A tag is "#" + letters, digits, "_", "/", "-" (punctuation ends
+		// it) and is never all digits: issue references stay in the title
+		// (residual review R1).
+		{"- [ ] Regression (see #12)", "Regression (see #12)", nil, 0, ""},
+		{"- [ ] Port #45, #46 to v2", "Port #45, #46 to v2", nil, 0, ""},
+		{"- [ ] Fix crash (regression from #123)", "Fix crash (regression from #123)", nil, 0, ""},
+		{"- [ ] Ship it #urgent.", "Ship it .", []string{"#urgent"}, 0, ""},
+		{"- [ ] Polish #area/ui #v2 #my-tag_1", "Polish", []string{"#area/ui", "#v2", "#my-tag_1"}, 0, ""},
+		{"- [ ] Tidy #ünïcode", "Tidy", []string{"#ünïcode"}, 0, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.line, func(t *testing.T) {
@@ -50,10 +59,17 @@ func TestCardTitleExcludesMetadata(t *testing.T) {
 
 func TestStripMeta(t *testing.T) {
 	cases := map[string]string{
-		"Fix login @{2026-10-30} #urgent": "Fix login",
-		"Plain title":                     "Plain title",
-		"Issue #42 regression":            "Issue #42 regression",
-		"  spaced   out  ":                "spaced out",
+		"Fix login @{2026-10-30} #urgent":  "Fix login",
+		"Plain title":                      "Plain title",
+		"Issue #42 regression":             "Issue #42 regression",
+		"  spaced   out  ":                 "spaced out",
+		"Fix crash #123.":                  "Fix crash #123.",
+		"Regression (see #12)":             "Regression (see #12)",
+		"Port #45, #46 to v2":              "Port #45, #46 to v2",
+		"Fix crash (regression from #123)": "Fix crash (regression from #123)",
+		"Release #v2":                      "Release",
+		"Tags #urgent, #area/ui!":          "Tags , !",
+		"C# and [[Note#Heading]]":          "C# and [[Note#Heading]]",
 	}
 	for in, want := range cases {
 		if got := StripMeta(in); got != want {

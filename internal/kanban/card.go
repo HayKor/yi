@@ -57,10 +57,13 @@ var codeRe = regexp.MustCompile("`[^`]*`")
 // "@@{time}", and a date linked to a daily note, "@[[date]]".
 var dateRe = regexp.MustCompile(`@@?\{[^}]*\}|@\[\[[^\]]*\]\]`)
 
-// tagRe matches a candidate Obsidian tag; metaSpans additionally
-// requires it to start the line or follow whitespace and not to be all
-// digits (a bare "#42" is not a tag in Obsidian).
-var tagRe = regexp.MustCompile("#[^\\s`]+")
+// tagRe matches a candidate Obsidian tag: "#" followed by a run of
+// letters, digits, "_", "/" and "-" (any other character, punctuation
+// included, ends it: "#urgent." is the tag "#urgent"). metaSpans
+// additionally requires it to start the line or follow whitespace and
+// not to be all digits, as Obsidian does: "#12)", "#45," and "#123."
+// are issue references in plain text, not tags.
+var tagRe = regexp.MustCompile(`#[\p{L}\p{N}_/-]+`)
 
 // leadingNumberRe matches a leading "<digits> " prefix, as used by note
 // filenames ("42 Yandex OAuth.md").
