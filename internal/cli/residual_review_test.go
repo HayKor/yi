@@ -92,3 +92,23 @@ func TestE2ENewOpenIssueCardFailureSuggestsPull(t *testing.T) {
 		t.Errorf("stderr = %q, want it to contain %q", env.stderr.String(), want)
 	}
 }
+
+// --- R5: push confirmation with no Stdin ----------------------------------
+
+func TestE2EPushConfirmNilStdinAborts(t *testing.T) {
+	src := "## Backlog\n\n- [ ] Unpushed\n\n## Todo\n\n## In Progress\n\n## Completed\n"
+	env := newTestEnv(t, src)
+	env.deps.IsTerminal = true
+	env.deps.Stdin = nil
+
+	env.mustRun("push")
+	if !strings.Contains(env.stdout.String(), "Aborted.") {
+		t.Errorf("stdout = %q, want Aborted.", env.stdout.String())
+	}
+	if m := env.mutations(); len(m) != 0 {
+		t.Errorf("push made %v, want nothing", m)
+	}
+	if got := env.kanban(); got != src {
+		t.Errorf("Kanban.md = %q, want unchanged", got)
+	}
+}

@@ -73,8 +73,12 @@ func runPush(cmd *cobra.Command, d Deps, dryRun, yes bool) error {
 
 // confirm reads a single line from r and reports whether it is "y" or
 // "yes", case-insensitively and with surrounding whitespace trimmed.
-// Anything else (including EOF with no input at all) is "no".
+// Anything else (including EOF with no input at all, or no reader) is
+// "no".
 func confirm(r io.Reader) (bool, error) {
+	if r == nil {
+		return false, nil
+	}
 	scanner := bufio.NewScanner(r)
 	if !scanner.Scan() {
 		return false, scanner.Err()
