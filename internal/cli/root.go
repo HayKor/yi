@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kanban-sync/internal/gitrepo"
-	"kanban-sync/internal/provider"
+	"github.com/HayKor/yi/internal/gitrepo"
+	"github.com/HayKor/yi/internal/provider"
 )
 
 // Deps collects yi's side-effecting dependencies so they can be faked in

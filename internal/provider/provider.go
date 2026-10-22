@@ -10,7 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"kanban-sync/internal/domain"
+	"github.com/HayKor/yi/internal/domain"
 )
 
 // IssueProvider talks to an issue tracker on behalf of yi.

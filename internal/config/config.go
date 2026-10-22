@@ -10,8 +10,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"kanban-sync/internal/branch"
-	"kanban-sync/internal/domain"
+	"github.com/HayKor/yi/internal/branch"
+	"github.com/HayKor/yi/internal/domain"
 )
 
 // NotesMode controls when yi creates a task note for an issue.

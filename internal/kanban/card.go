@@ -8,7 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"kanban-sync/internal/domain"
+	"github.com/HayKor/yi/internal/domain"
 )
 
 // Card is a single kanban task, parsed from one "- [ ] ..." line (plus any

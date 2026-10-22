@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"kanban-sync/internal/config"
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/kanban"
-	"kanban-sync/internal/notes"
-	"kanban-sync/internal/provider/fake"
+	"github.com/HayKor/yi/internal/config"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/kanban"
+	"github.com/HayKor/yi/internal/notes"
+	"github.com/HayKor/yi/internal/provider/fake"
 )
 
 // --- test fixtures --------------------------------------------------

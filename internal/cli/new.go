@@ -9,10 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/kanban"
-	"kanban-sync/internal/provider"
-	"kanban-sync/internal/reconcile"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/kanban"
+	"github.com/HayKor/yi/internal/provider"
+	"github.com/HayKor/yi/internal/reconcile"
 )
 
 // newNewCommand builds the `yi new` command: it creates a remote

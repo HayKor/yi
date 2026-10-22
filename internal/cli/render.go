@@ -5,9 +5,9 @@ import (
 	"io"
 	"text/tabwriter"
 
-	"kanban-sync/internal/config"
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/reconcile"
+	"github.com/HayKor/yi/internal/config"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/reconcile"
 )
 
 // ANSI color codes used by renderStatus; see spec §6.6.

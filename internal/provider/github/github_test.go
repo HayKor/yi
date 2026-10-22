@@ -9,9 +9,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/provider"
-	"kanban-sync/internal/provider/providertest"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/provider"
+	"github.com/HayKor/yi/internal/provider/providertest"
 )
 
 const testOwner = "octo"

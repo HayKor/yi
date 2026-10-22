@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"kanban-sync/internal/config"
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/provider/fake"
+	"github.com/HayKor/yi/internal/config"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/provider/fake"
 )
 
 // Final review C1: Obsidian Kanban metadata on a card (dates, times,

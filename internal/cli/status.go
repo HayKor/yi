@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kanban-sync/internal/reconcile"
+	"github.com/HayKor/yi/internal/reconcile"
 )
 
 // newStatusCommand builds the `yi status` command: it never changes

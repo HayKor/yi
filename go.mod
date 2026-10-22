@@ -1,4 +1,4 @@
-module kanban-sync
+module github.com/HayKor/yi
 
 go 1.26.0
 

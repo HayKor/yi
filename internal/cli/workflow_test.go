@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/gitrepo"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/gitrepo"
 )
 
 // gitConfigYAMLTemplate is testConfigYAML plus a "git" section pointing

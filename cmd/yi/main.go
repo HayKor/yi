@@ -5,16 +5,16 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"runtime/debug"
 
-	"kanban-sync/internal/cli"
-	"kanban-sync/internal/gitrepo"
-	_ "kanban-sync/internal/provider/github"
+	"github.com/HayKor/yi/internal/cli"
+	"github.com/HayKor/yi/internal/gitrepo"
+	_ "github.com/HayKor/yi/internal/provider/github"
 )
 
-// version is set at build time via -ldflags "-X main.version=...".
-var version = "dev"
-
 func main() {
+	info, ok := debug.ReadBuildInfo()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
@@ -25,7 +25,7 @@ func main() {
 		Getenv:     os.Getenv,
 		Getwd:      os.Getwd,
 		IsTerminal: isTerminal(os.Stdout),
-		Version:    version,
+		Version:    resolveVersion(version, info, ok),
 		OpenGit:    gitrepo.Open,
 	}, os.Args[1:]))
 }

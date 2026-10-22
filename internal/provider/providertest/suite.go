@@ -13,8 +13,8 @@ import (
 	"sort"
 	"testing"
 
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/provider"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/provider"
 )
 
 // notFoundID is an issue id the suite never creates, used to

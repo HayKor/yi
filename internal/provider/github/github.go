@@ -18,8 +18,8 @@ import (
 	gh "github.com/google/go-github/v93/github"
 	"gopkg.in/yaml.v3"
 
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/provider"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/provider"
 )
 
 func init() {

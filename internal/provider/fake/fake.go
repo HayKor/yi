@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/provider"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/provider"
 )
 
 // Provider is an in-memory, mutex-guarded provider.IssueProvider.

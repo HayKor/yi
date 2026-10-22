@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kanban-sync/internal/config"
+	"github.com/HayKor/yi/internal/config"
 )
 
 // initConfigTemplate is the .issue-sync.yml `yi init` writes. Its

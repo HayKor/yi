@@ -12,10 +12,10 @@ package reconcile
 import (
 	"fmt"
 
-	"kanban-sync/internal/config"
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/kanban"
-	"kanban-sync/internal/provider"
+	"github.com/HayKor/yi/internal/config"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/kanban"
+	"github.com/HayKor/yi/internal/provider"
 )
 
 // Change is one atomic action a Plan can apply, either to the local

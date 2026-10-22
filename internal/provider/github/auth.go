@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"kanban-sync/internal/provider"
+	"github.com/HayKor/yi/internal/provider"
 )
 
 // resolveToken finds a GitHub token to authenticate with, per spec

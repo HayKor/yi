@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"kanban-sync/internal/domain"
+	"github.com/HayKor/yi/internal/domain"
 )
 
 const fullExampleYAML = `provider: github

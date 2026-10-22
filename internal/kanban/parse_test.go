@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"kanban-sync/internal/domain"
+	"github.com/HayKor/yi/internal/domain"
 )
 
 func testStatuses() []domain.Status {

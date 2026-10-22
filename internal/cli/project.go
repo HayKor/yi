@@ -6,12 +6,12 @@ import (
 	"io"
 	"os"
 
-	"kanban-sync/internal/config"
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/kanban"
-	"kanban-sync/internal/notes"
-	"kanban-sync/internal/provider"
-	"kanban-sync/internal/reconcile"
+	"github.com/HayKor/yi/internal/config"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/kanban"
+	"github.com/HayKor/yi/internal/notes"
+	"github.com/HayKor/yi/internal/provider"
+	"github.com/HayKor/yi/internal/reconcile"
 )
 
 // project bundles everything a sync command (status/pull/push) needs

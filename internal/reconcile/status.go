@@ -3,7 +3,7 @@ package reconcile
 import (
 	"sort"
 
-	"kanban-sync/internal/domain"
+	"github.com/HayKor/yi/internal/domain"
 )
 
 // RowKind classifies one line of `yi status` output.

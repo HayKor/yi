@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kanban-sync/internal/reconcile"
+	"github.com/HayKor/yi/internal/reconcile"
 )
 
 // newPushCommand builds the `yi push` command (local wins): it prints

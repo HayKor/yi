@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"kanban-sync/internal/domain"
+	"github.com/HayKor/yi/internal/domain"
 )
 
 // item is one element of a section's body: either a card (first line plus

@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/provider"
-	"kanban-sync/internal/reconcile"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/provider"
+	"github.com/HayKor/yi/internal/reconcile"
 )
 
 // newDoneCommand builds the `yi done` command: it moves an issue

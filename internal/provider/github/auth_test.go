@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"kanban-sync/internal/provider"
+	"github.com/HayKor/yi/internal/provider"
 )
 
 func TestResolveToken(t *testing.T) {

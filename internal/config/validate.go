@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"kanban-sync/internal/branch"
-	"kanban-sync/internal/domain"
+	"github.com/HayKor/yi/internal/branch"
+	"github.com/HayKor/yi/internal/domain"
 )
 
 // ValidationError reports every problem found while validating a

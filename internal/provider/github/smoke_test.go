@@ -5,9 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/provider"
-	"kanban-sync/internal/provider/providertest"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/provider"
+	"github.com/HayKor/yi/internal/provider/providertest"
 )
 
 // recordingProvider wraps a provider.IssueProvider and records the id

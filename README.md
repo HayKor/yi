@@ -9,33 +9,29 @@ Obsidian остаётся основным UI: вы редактируете к�
 а `yi` явными командами (`status` / `pull` / `push` / `new` / `start` / `done`) переносит
 изменения между доской и remote-трекером. Никакой фоновой магии и скрытых id в `Kanban.md`.
 
-## Установка / сборка
+## Установка
 
-Пока модуль называется `kanban-sync` (не настоящий import path), поэтому `go install` работать
-не будет — собирайте бинарник локально:
+Готовые бинарники для linux/macOS/windows (amd64/arm64) — на странице
+[Releases](https://github.com/HayKor/yi/releases): скачайте архив под свою систему, распакуйте
+и положите `yi` в `PATH`.
+
+Или через Go (≥1.26):
 
 ```sh
-git clone <this-repo>
-cd kanban-sync
+go install github.com/HayKor/yi/cmd/yi@latest
+```
+
+Сборка из исходников:
+
+```sh
+git clone https://github.com/HayKor/yi
+cd yi
 make build          # -> ./yi (статический бинарник, CGO_ENABLED=0)
 ./yi version
 ```
 
-После переноса модуля на настоящий репозиторий (например `github.com/you/yi`) можно будет
-поставить его одной командой:
-
-```sh
-go install github.com/you/yi/cmd/yi@latest
-```
-
-Релизные бинарники для linux/darwin/windows (amd64/arm64) собираются через
-[goreleaser](https://goreleaser.com) (`.goreleaser.yaml`); локальный прогон без публикации:
-
-```sh
-make release-snapshot   # goreleaser release --snapshot --clean
-```
-
-(goreleaser нужно установить отдельно, в репозитории он не требуется для `go build`/`go test`.)
+Релизы собирает [goreleaser](https://goreleaser.com) в GitHub Actions при push тега `v*`
+(`.github/workflows/release.yml`); локальный прогон без публикации — `make release-snapshot`.
 
 ## Быстрый старт
 
@@ -252,7 +248,7 @@ $ yi done 42
 3. Подключается к бинарнику единственной строкой blank-import в `cmd/yi/main.go`:
 
    ```go
-   _ "kanban-sync/internal/provider/gitlab"
+   _ "github.com/HayKor/yi/internal/provider/gitlab"
    ```
 
    Ядро (`internal/reconcile`, `internal/cli`) никогда не импортирует конкретный провайдер —

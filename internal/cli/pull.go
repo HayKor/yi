@@ -3,7 +3,7 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
-	"kanban-sync/internal/reconcile"
+	"github.com/HayKor/yi/internal/reconcile"
 )
 
 // newPullCommand builds the `yi pull` command (remote wins): local

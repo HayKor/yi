@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/provider/fake"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/provider/fake"
 )
 
 func TestFetchRemote(t *testing.T) {

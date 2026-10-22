@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"kanban-sync/internal/domain"
+	"github.com/HayKor/yi/internal/domain"
 )
 
 // FormatCard returns the canonical Markdown for a card's first line

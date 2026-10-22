@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"sync"
 
-	"kanban-sync/internal/domain"
-	"kanban-sync/internal/kanban"
-	"kanban-sync/internal/provider"
+	"github.com/HayKor/yi/internal/domain"
+	"github.com/HayKor/yi/internal/kanban"
+	"github.com/HayKor/yi/internal/provider"
 )
 
 // maxConcurrentFetches caps how many GetIssue calls FetchRemote makes
