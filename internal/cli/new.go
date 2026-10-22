@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -9,14 +10,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"kanban-sync/internal/domain"
-	"kanban-sync/internal/kanban"
+	"kanban-sync/internal/provider"
 	"kanban-sync/internal/reconcile"
 )
 
 // newNewCommand builds the `yi new` command: it creates a remote
-// issue and the matching board card (plus its task note) in one step,
-// without asking for confirmation (the command itself is the explicit
-// request). See spec §6.7.
+// issue and then the matching board card (plus its task note, always)
+// in one step, without asking for confirmation (the command itself is
+// the explicit request). See spec §6.7.
 func newNewCommand(d Deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <title>",
@@ -54,25 +55,33 @@ func runNew(cmd *cobra.Command, d Deps, titleArg, statusFlag, body string) error
 		return fmt.Errorf("unknown status %q", statusKey)
 	}
 
-	card, err := p.board.Add(statusKey, kanban.FormatCard(st.CloseIssue, title, "", 0))
+	// Create the issue before touching the board: if the tracker call
+	// fails, nothing is written locally, so there's no id-less card
+	// left behind for the next push to turn into a duplicate issue.
+	issue, err := p.prov.CreateIssue(ctx, provider.NewIssue{Title: title, Body: body, Labels: []string{st.Label}})
 	if err != nil {
 		return err
+	}
+	id := issue.ID
+
+	// A failed close doesn't stop the card from being added: the issue
+	// exists, so the board must record it (a later push closes it).
+	var closeErr error
+	if st.CloseIssue {
+		closed := domain.IssueClosed
+		if _, err := p.prov.UpdateIssue(ctx, id, provider.IssueUpdate{State: &closed}); err != nil {
+			closeErr = fmt.Errorf("#%d was created but not closed (run yi push to close it): %w", id, err)
+		}
 	}
 
 	plan := reconcile.Plan{Changes: []reconcile.Change{
-		reconcile.CreateIssue{Card: card, Title: title, Body: body, Status: statusKey, WithNote: true},
+		reconcile.AddCard{Issue: issue, To: statusKey, WithNote: true},
 	}}
 	if err := p.applier(io.Discard).Apply(ctx, plan); err != nil {
-		return err
+		return errors.Join(fmt.Errorf("#%d %s was created, but adding its card failed (run yi pull to add it): %w", id, issue.URL, err), closeErr)
 	}
 
-	id := card.IssueID
-	issue, err := p.prov.GetIssue(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	notePath, ok := p.store.Resolve(p.index, id, card.Link)
+	notePath, ok := p.store.Resolve(p.index, id, "")
 	if !ok {
 		return fmt.Errorf("note for #%d not found after creation", id)
 	}
@@ -83,5 +92,5 @@ func runNew(cmd *cobra.Command, d Deps, titleArg, statusFlag, body string) error
 
 	fmt.Fprintf(d.Stdout, "✓ Created #%d %s\n", id, issue.URL)
 	fmt.Fprintf(d.Stdout, "✓ Note %s\n", filepath.ToSlash(relPath))
-	return nil
+	return closeErr
 }

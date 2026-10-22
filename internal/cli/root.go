@@ -77,7 +77,7 @@ func NewRootCommand(d Deps) *cobra.Command {
 	}
 
 	root.PersistentFlags().String("project", "", "project directory (defaults to the current directory or nearest ancestor)")
-	root.PersistentFlags().BoolP("verbose", "v", false, "log HTTP requests and git commands to stderr")
+	root.PersistentFlags().BoolP("verbose", "v", false, "print the loaded config path and remote issue counts to stderr")
 
 	// A bare "yi" invocation is runnable (it prints help), so Runnable()
 	// doesn't short-circuit execution before this Args check runs. That

@@ -58,8 +58,15 @@ func runDone(cmd *cobra.Command, d Deps, idArg string) error {
 	}
 
 	var changes []reconcile.Change
+	boardChanged := false
 	if card.Status != done {
 		changes = append(changes, reconcile.MoveCard{Card: card, From: card.Status, To: done})
+	} else if !card.Checked {
+		// Already in the done lane but unchecked (e.g. a board from
+		// before yi): `done` still means "+ [x]" (spec §6.7). Apply
+		// saves the board along with the plan.
+		p.board.SetChecked(card, true)
+		boardChanged = true
 	}
 
 	from, _ := p.cfg.StatusOf(issue)
@@ -68,7 +75,7 @@ func runDone(cmd *cobra.Command, d Deps, idArg string) error {
 		changes = append(changes, reconcile.SetStatus{ID: id, From: from, To: done, Update: upd})
 	}
 
-	if len(changes) > 0 {
+	if len(changes) > 0 || boardChanged {
 		if err := p.applier(io.Discard).Apply(ctx, reconcile.Plan{Changes: changes}); err != nil {
 			return err
 		}
