@@ -32,6 +32,10 @@ statuses:                     # order = column order on the board
     label: status:done
     closeIssue: true          # cards here close their issue
 
+# github:
+#   project: 1                # keep status in a GitHub Project's Status field
+#                             # instead of labels (options = headings)
+
 # notes:
 #   create: always            # always | on-demand
 

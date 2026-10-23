@@ -18,6 +18,7 @@ import (
 // server round-trips.
 type fakeIssue struct {
 	Number      int              `json:"number"`
+	NodeID      string           `json:"node_id"`
 	Title       string           `json:"title"`
 	Body        string           `json:"body,omitempty"`
 	State       string           `json:"state"`
@@ -52,6 +53,9 @@ type fakeGitHub struct {
 	reqCount  map[string]int // path, with any "/api/v3" prefix stripped -> request count
 	rawCount  map[string]int // exact request path, prefix included -> request count
 
+	project *fakeProject   // the GitHub Project served over GraphQL; nil = none
+	opCount map[string]int // GraphQL operationName -> request count
+
 	srv *httptest.Server
 }
 
@@ -75,6 +79,7 @@ func newFakeGitHub(owner, repo string) *fakeGitHub {
 		nextID:   1,
 		reqCount: make(map[string]int),
 		rawCount: make(map[string]int),
+		opCount:  make(map[string]int),
 	}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
 	return f
@@ -105,6 +110,9 @@ func (f *fakeGitHub) Seed(iss *fakeIssue) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	if iss.NodeID == "" {
+		iss.NodeID = fmt.Sprintf("I_%d", iss.Number)
+	}
 	f.issues[iss.Number] = iss
 	if iss.Number+1 > f.nextID {
 		f.nextID = iss.Number + 1
@@ -154,6 +162,14 @@ func (f *fakeGitHub) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case escapedPath == "/graphql" || escapedPath == "/api/graphql":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		f.graphql(w, r)
+		return
+
 	case issuesCollectionRe.MatchString(path):
 		m := issuesCollectionRe.FindStringSubmatch(path)
 		if m[1] != f.owner || m[2] != f.repo {
@@ -295,6 +311,7 @@ func (f *fakeGitHub) createIssue(w http.ResponseWriter, r *http.Request) {
 
 	iss := &fakeIssue{
 		Number:    number,
+		NodeID:    fmt.Sprintf("I_%d", number),
 		Title:     body.Title,
 		Body:      body.Body,
 		State:     "open",

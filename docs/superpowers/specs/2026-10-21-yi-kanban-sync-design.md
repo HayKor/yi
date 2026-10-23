@@ -622,7 +622,8 @@ title, body)`), регистрируется тем же реестром по �
 ## 13. Принятые решения и допущения (на review)
 
 1. Язык — Go; `git` через exec, не go-git.
-2. Статус хранится в labels `status:*`, не в GitHub Projects v2.
+2. Статус хранится в labels `status:*`; с `github.project` — в поле Status GitHub Project (v2),
+   см. `2026-10-23-github-projects-status-design.md`.
 3. `pull` импортирует все open issues; закрытые — только уже присутствующие на доске.
 4. Создание notes настраивается `notes.create: always | on-demand`, default `always`.
 5. Pull переименовывает note при смене title; обратные ссылки в vault не обновляются (warning).

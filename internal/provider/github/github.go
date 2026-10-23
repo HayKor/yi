@@ -32,14 +32,28 @@ type Provider struct {
 	client *gh.Client
 	owner  string
 	repo   string
+
+	// project is the GitHub Project whose Status field holds issue
+	// status ("project" option); nil keeps status in labels.
+	project *project
 }
 
-var _ provider.IssueProvider = (*Provider)(nil)
+var (
+	_ provider.IssueProvider = (*Provider)(nil)
+	_ provider.StatusFielder = (*Provider)(nil)
+)
+
+// StatusField reports whether p keeps issue status in a project's
+// Status field rather than in labels.
+func (p *Provider) StatusField() bool { return p.project != nil }
 
 // options is the provider-specific "github:" config section (spec
 // §6.1 GitHub).
 type options struct {
 	BaseURL string `yaml:"baseUrl"`
+	// Project is the GitHub Project (v2) to keep issue status in:
+	// "<number>" (owned by the repository's owner) or "owner/number".
+	Project string `yaml:"project"`
 }
 
 // knownOptionKeys lists every recognized key in the "github:" options
@@ -49,7 +63,7 @@ type options struct {
 // decodeOptions rejects anything not in this list instead of ignoring
 // it. yaml.v3's Node.Decode has no equivalent of Decoder.KnownFields,
 // so the mapping's keys are checked by hand.
-var knownOptionKeys = map[string]bool{"baseUrl": true}
+var knownOptionKeys = map[string]bool{"baseUrl": true, "project": true}
 
 // decodeOptions decodes node into options, per knownOptionKeys.
 func decodeOptions(node yaml.Node) (options, error) {
@@ -62,7 +76,7 @@ func decodeOptions(node yaml.Node) (options, error) {
 		for i := 0; i+1 < len(node.Content); i += 2 {
 			key := node.Content[i].Value
 			if !knownOptionKeys[key] {
-				return options{}, fmt.Errorf("github: unknown option %q (known: baseUrl)", key)
+				return options{}, fmt.Errorf("github: unknown option %q (known: baseUrl, project)", key)
 			}
 		}
 	}
@@ -106,7 +120,25 @@ func New(ctx context.Context, cfg provider.Config) (provider.IssueProvider, erro
 		return nil, fmt.Errorf("github: new client: %w", err)
 	}
 
-	return &Provider{client: client, owner: owner, repo: repo}, nil
+	p := &Provider{client: client, owner: owner, repo: repo}
+	if err := p.configure(ctx, opts, cfg.Statuses); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// configure sets up where p keeps issue status: in the project's
+// Status field if opts names a project (checking statuses against its
+// options), else in labels, which every status then needs.
+func (p *Provider) configure(ctx context.Context, opts options, statuses []domain.Status) error {
+	if opts.Project == "" {
+		return provider.RequireLabels(statuses)
+	}
+	owner, number, err := parseProjectRef(opts.Project, p.owner)
+	if err != nil {
+		return err
+	}
+	return p.loadProject(ctx, owner, number, statuses)
 }
 
 // newWithClient builds a Provider that sends requests to baseURL
@@ -114,6 +146,12 @@ func New(ctx context.Context, cfg provider.Config) (provider.IssueProvider, erro
 // Enterprise path suffixing (unlike New with a baseUrl option). Used
 // by tests to point at an httptest.Server.
 func newWithClient(hc *http.Client, baseURL, repo string) (*Provider, error) {
+	return newWithClientOptions(context.Background(), hc, baseURL, repo, options{}, nil)
+}
+
+// newWithClientOptions is newWithClient plus the "github:" options and
+// statuses New would configure the Provider with.
+func newWithClientOptions(ctx context.Context, hc *http.Client, baseURL, repo string, opts options, statuses []domain.Status) (*Provider, error) {
 	owner, name, err := splitRepository(repo)
 	if err != nil {
 		return nil, err
@@ -124,7 +162,11 @@ func newWithClient(hc *http.Client, baseURL, repo string) (*Provider, error) {
 		return nil, fmt.Errorf("github: new client: %w", err)
 	}
 
-	return &Provider{client: client, owner: owner, repo: name}, nil
+	p := &Provider{client: client, owner: owner, repo: name}
+	if err := p.configure(ctx, opts, statuses); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 // splitRepository parses "owner/repo" into its two parts, requiring
@@ -155,7 +197,11 @@ func (p *Provider) ListOpenIssues(ctx context.Context) ([]domain.Issue, error) {
 			if iss.PullRequestLinks != nil {
 				continue
 			}
-			all = append(all, toDomainIssue(iss))
+			di, err := p.withStatus(ctx, toDomainIssue(iss))
+			if err != nil {
+				return nil, err
+			}
+			all = append(all, di)
 		}
 		if resp.NextPage == 0 {
 			break
@@ -179,7 +225,7 @@ func (p *Provider) GetIssue(ctx context.Context, id int) (domain.Issue, error) {
 	if iss.PullRequestLinks != nil {
 		return domain.Issue{}, fmt.Errorf("github: %s: #%d is a pull request: %w", op, id, provider.ErrNotFound)
 	}
-	return toDomainIssue(iss), nil
+	return p.withStatus(ctx, toDomainIssue(iss))
 }
 
 // CreateIssue creates a new issue.
@@ -196,17 +242,26 @@ func (p *Provider) CreateIssue(ctx context.Context, in provider.NewIssue) (domai
 	if err != nil {
 		return domain.Issue{}, p.repoErr("create issue", resp, err)
 	}
-	return toDomainIssue(iss), nil
+	out := toDomainIssue(iss)
+	// A new issue isn't on the project yet (unless a project workflow
+	// adds it, still without a Status): RemoteUpdateFor sets it.
+	out.HasStatusField = p.project != nil
+	return out, nil
 }
 
 // UpdateIssue applies only the fields set in upd: title/state via a
 // single Issues.Update call, then AddLabels via AddLabelsToIssue,
 // then each RemoveLabels entry via RemoveLabelForIssue (a 404 there
-// means the label was already gone, which is not an error). It
-// always finishes with a fresh GetIssue so the caller sees the
-// current state, even if there was nothing to change.
+// means the label was already gone, which is not an error), then
+// Status on the project (last, so it wins over a project workflow
+// that reacts to the close). It always finishes by reading the issue
+// back so the caller sees the current state, even if there was
+// nothing to change.
 func (p *Provider) UpdateIssue(ctx context.Context, id int, upd provider.IssueUpdate) (domain.Issue, error) {
 	op := fmt.Sprintf("update issue #%d", id)
+	if upd.Status != nil && p.project == nil {
+		return domain.Issue{}, fmt.Errorf("github: %s: a status field needs the github.project option", op)
+	}
 
 	if upd.Title != nil || upd.State != nil {
 		req := gh.UpdateIssueRequest{Title: upd.Title}
@@ -241,6 +296,22 @@ func (p *Provider) UpdateIssue(ctx context.Context, id int, upd provider.IssueUp
 		if err != nil && !isNotFound(resp) {
 			return domain.Issue{}, mapErr(op, resp, err)
 		}
+	}
+
+	if upd.Status != nil {
+		// The issue as it stands after the REST edits above, plus the
+		// node id the project needs to add it.
+		iss, resp, err := p.client.Issues.Get(ctx, p.owner, p.repo, id)
+		if err != nil {
+			return domain.Issue{}, mapErr(op, resp, err)
+		}
+		name, err := p.setStatus(ctx, id, iss.GetNodeID(), *upd.Status)
+		if err != nil {
+			return domain.Issue{}, err
+		}
+		out := toDomainIssue(iss)
+		out.HasStatusField, out.Status = true, name
+		return out, nil
 	}
 
 	return p.GetIssue(ctx, id)

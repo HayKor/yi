@@ -40,12 +40,9 @@ changelog:
 
 release:
   header: |
-    First release of `yi`: sync an Obsidian Kanban board (`Kanban.md`) and task notes with GitHub Issues.
-
-    Commands: `init`, `status`, `pull`, `push`, `new`, `start`, `done`. See the README for setup.
+    `yi` syncs an Obsidian Kanban board (`Kanban.md`) and task notes with GitHub Issues: status lives in
+    `status:*` labels or in a GitHub Project's Status field (`github.project`). See the README for setup.
 
     **Known limitations**
-    - Issue status lives in `status:*` labels; GitHub Projects (v2) fields are not read or written.
     - GitHub is the only provider so far.
     - Don't edit the board in Obsidian while `yi pull`/`yi push` runs: yi then refuses to overwrite `Kanban.md`.
-    - Cards link notes by path (`[[Tasks/42 Title]]`), so Obsidian Kanban shows the folder in the card text.

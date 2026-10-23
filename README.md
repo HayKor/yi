@@ -71,6 +71,7 @@ repository: my-org/yandex-ads
 # Опционально, специфично для провайдера; ядро передаёт секцию провайдеру как есть.
 github:
   baseUrl: https://github.example.com/api/v3/   # GitHub Enterprise
+  project: 1                 # статус в поле Status GitHub Project, а не в labels (см. ниже)
 
 kanban: ./Kanban.md          # default: ./Kanban.md
 tasks: ./Tasks               # default: ./Tasks
@@ -90,7 +91,7 @@ statuses:                    # порядок важен: это порядок 
     label: status:completed
     closeIssue: true
 
-defaultStatus: backlog       # статус для open issue без status-label; default: первый статус
+defaultStatus: backlog       # статус для open issue без status-label (или вне проекта); default: первый статус
 startStatus: in-progress     # куда `yi start` переводит issue; default: "in-progress"
 doneStatus: completed        # куда `yi done` переводит issue; default: первый статус с closeIssue
 
@@ -103,6 +104,36 @@ git:                         # опционально; без секции "git"
     template: "{type}/{issue}-{slug}"
     defaultType: feat
 ```
+
+### Статус в GitHub Projects
+
+Если ваша доска на GitHub — это Project (v2), а не labels, укажите его номер. Номер есть в URL
+проекта: `github.com/users/<owner>/projects/<номер>`.
+
+```yaml
+github:
+  project: 1                 # проект владельца repository
+  # project: my-org/5        # или проект другого владельца (организации)
+```
+
+После этого колонка карточки синхронизируется с полем **Status** проекта, а `label` у статусов
+не нужен: labels `yi` не читает и не меняет. Колонка сопоставляется с опцией Status по
+`heading` без учёта регистра. Если опция называется иначе, укажите её явно:
+
+```yaml
+statuses:
+  in-progress:
+    heading: In Progress
+    projectStatus: Doing     # опция поля Status в проекте
+```
+
+- Если для какой-то колонки опции нет, `yi` сразу остановится и перечислит опции проекта.
+  Лишние опции (например, Review) разрешены. Если у issue стоит такая опция, `pull` не трогает
+  её карточку и выводит warning.
+- Issue, которой нет в проекте, `pull` кладёт в `defaultStatus`. `push` и `yi new` сами
+  добавляют issue в проект и ставят Status.
+- Closed issue по-прежнему попадает в колонку с `closeIssue: true`.
+- Токену нужен scope `project`. Для `gh`: `gh auth refresh -s project`.
 
 ### Аутентификация в GitHub
 
