@@ -38,6 +38,21 @@ func newInitEnv(t *testing.T) (string, Deps, *bytes.Buffer, *fake.Provider) {
 	return dir, d, &out, p
 }
 
+// setRepository replaces the "owner/repo" placeholder in the
+// .issue-sync.yml init generated in dir, as the user is told to.
+func setRepository(t *testing.T, dir, repo string) {
+	t.Helper()
+	path := filepath.Join(dir, ".issue-sync.yml")
+	cfg := readFile(t, path)
+	if !strings.Contains(cfg, "repository: owner/repo") {
+		t.Fatalf("generated config lacks the placeholder:\n%s", cfg)
+	}
+	cfg = strings.Replace(cfg, "repository: owner/repo", "repository: "+repo, 1)
+	if err := os.WriteFile(path, []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -59,6 +74,7 @@ func TestInitCreatesConfigAndBoard(t *testing.T) {
 		}
 	}
 
+	setRepository(t, dir, "haykor/CarManager")
 	cfg, err := config.Load(filepath.Join(dir, ".issue-sync.yml"))
 	if err != nil {
 		t.Fatalf("generated config doesn't load: %v", err)
@@ -102,6 +118,7 @@ func TestInitThenPullUsesGeneratedColumns(t *testing.T) {
 	if code := Main(context.Background(), d, []string{"init"}); code != 0 {
 		t.Fatalf("init exit code = %d; stdout: %s", code, out)
 	}
+	setRepository(t, dir, "haykor/CarManager")
 	p.Seed(
 		domain.Issue{ID: 1, Title: "Removing a Car", State: domain.IssueOpen, Labels: []string{"status:todo"}},
 		domain.Issue{ID: 2, Title: "Adding a Car", State: domain.IssueOpen, Labels: []string{"status:in-progress"}},
@@ -123,6 +140,23 @@ func TestInitThenPullUsesGeneratedColumns(t *testing.T) {
 	card2 := strings.Index(board, "`#2`")
 	if !(todo < card1 && card1 < inProgress && inProgress < card2) {
 		t.Errorf("cards not in their columns:\n%s", board)
+	}
+}
+
+// Running pull before replacing the placeholder must say so, not
+// fail with a confusing "not found" from the provider.
+func TestPullRejectsInitPlaceholder(t *testing.T) {
+	_, d, out, _ := newInitEnv(t)
+	var stderr bytes.Buffer
+	d.Stderr = &stderr
+	if code := Main(context.Background(), d, []string{"init"}); code != 0 {
+		t.Fatalf("init exit code = %d; stdout: %s", code, out)
+	}
+	if code := Main(context.Background(), d, []string{"pull"}); code != 1 {
+		t.Fatalf("pull with the placeholder exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), `"owner/repo" placeholder`) {
+		t.Errorf("stderr doesn't mention the placeholder:\n%s", &stderr)
 	}
 }
 

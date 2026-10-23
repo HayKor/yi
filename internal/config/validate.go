@@ -24,6 +24,10 @@ func (e *ValidationError) Error() string {
 	return strings.Join(lines, "\n")
 }
 
+// initPlaceholderRepository is the repository `yi init` writes into a
+// new .issue-sync.yml for the user to replace.
+const initPlaceholderRepository = "owner/repo"
+
 // validate checks cfg (already defaulted) against raw (the pre-default
 // values straight from YAML, needed to tell "the user set this to an
 // invalid value" apart from "this was left to default"). It collects
@@ -31,8 +35,11 @@ func (e *ValidationError) Error() string {
 func validate(cfg *Config, raw rawConfig) error {
 	var problems []string
 
-	if cfg.Repository == "" {
+	switch cfg.Repository {
+	case "":
 		problems = append(problems, "repository is required")
+	case initPlaceholderRepository:
+		problems = append(problems, `repository is still the "owner/repo" placeholder; set it to your repository`)
 	}
 
 	if len(cfg.Statuses) == 0 {

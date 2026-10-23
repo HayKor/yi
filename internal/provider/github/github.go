@@ -149,7 +149,7 @@ func (p *Provider) ListOpenIssues(ctx context.Context) ([]domain.Issue, error) {
 	for {
 		issues, resp, err := p.client.Issues.ListByRepo(ctx, p.owner, p.repo, opt)
 		if err != nil {
-			return nil, mapErr("list open issues", resp, err)
+			return nil, p.repoErr("list open issues", resp, err)
 		}
 		for _, iss := range issues {
 			if iss.PullRequestLinks != nil {
@@ -194,7 +194,7 @@ func (p *Provider) CreateIssue(ctx context.Context, in provider.NewIssue) (domai
 
 	iss, resp, err := p.client.Issues.Create(ctx, p.owner, p.repo, req)
 	if err != nil {
-		return domain.Issue{}, mapErr("create issue", resp, err)
+		return domain.Issue{}, p.repoErr("create issue", resp, err)
 	}
 	return toDomainIssue(iss), nil
 }
@@ -275,6 +275,17 @@ func toDomainIssue(iss *gh.Issue) domain.Issue {
 		URL:       iss.GetHTMLURL(),
 		UpdatedAt: iss.GetUpdatedAt().Time,
 	}
+}
+
+// repoErr is mapErr for requests on the repository itself (listing,
+// creating issues), where a 404 means the repository doesn't exist or
+// the token can't see it, rather than a missing issue.
+func (p *Provider) repoErr(op string, resp *gh.Response, err error) error {
+	if isNotFound(resp) {
+		return fmt.Errorf("github: %s: %w: %s/%s (check \"repository\" in .issue-sync.yml and that your token can access it)",
+			op, provider.ErrRepoNotFound, p.owner, p.repo)
+	}
+	return mapErr(op, resp, err)
 }
 
 // mapErr translates a go-github error into yi's provider error

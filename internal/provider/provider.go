@@ -65,6 +65,11 @@ var (
 	// ErrNotFound indicates an issue doesn't exist, was deleted, or
 	// was moved.
 	ErrNotFound = errors.New("issue not found")
+	// ErrRepoNotFound indicates the configured repository doesn't
+	// exist or isn't visible with the credentials in use. It is
+	// distinct from ErrNotFound: a missing repository must abort a
+	// sync, not mark every card's issue as missing.
+	ErrRepoNotFound = errors.New("repository not found")
 	// ErrAuth indicates the provider failed to authenticate.
 	ErrAuth = errors.New("authentication failed")
 )

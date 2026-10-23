@@ -179,6 +179,11 @@ func TestValidationErrors(t *testing.T) {
 			wantSub: "repository is required",
 		},
 		{
+			name:    "yi init placeholder repository",
+			yaml:    strings.Replace(fullExampleYAML, "repository: my-org/yandex-ads\n", "repository: owner/repo\n", 1),
+			wantSub: `"owner/repo" placeholder`,
+		},
+		{
 			name: "no statuses",
 			yaml: "provider: github\nrepository: my-org/yandex-ads\n",
 			// repository present, so only the statuses problem should fire.

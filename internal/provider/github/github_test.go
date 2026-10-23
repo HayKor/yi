@@ -284,6 +284,33 @@ func TestNotFoundWrapped(t *testing.T) {
 	}
 }
 
+// A 404 on the repository's own endpoints means a wrong repository
+// (or one the token can't see), not a missing issue.
+func TestRepoNotFound(t *testing.T) {
+	fake := newFakeGitHub(testOwner, testRepo)
+	defer fake.Close()
+
+	p, err := newWithClient(fake.Client(), fake.URL()+"/", testOwner+"/nope")
+	if err != nil {
+		t.Fatalf("newWithClient() error = %v", err)
+	}
+
+	_, listErr := p.ListOpenIssues(context.Background())
+	_, createErr := p.CreateIssue(context.Background(), provider.NewIssue{Title: "t"})
+	for name, err := range map[string]error{"ListOpenIssues": listErr, "CreateIssue": createErr} {
+		if !errors.Is(err, provider.ErrRepoNotFound) {
+			t.Errorf("%s() error = %v, want wrapping ErrRepoNotFound", name, err)
+			continue
+		}
+		if errors.Is(err, provider.ErrNotFound) {
+			t.Errorf("%s() error = %v wraps ErrNotFound; a missing repo isn't a missing issue", name, err)
+		}
+		if !strings.Contains(err.Error(), testOwner+"/nope") {
+			t.Errorf("%s() error = %q, want to name the repository", name, err)
+		}
+	}
+}
+
 func TestUpdateIssueLabelsAndState(t *testing.T) {
 	fake := newFakeGitHub(testOwner, testRepo)
 	defer fake.Close()
