@@ -161,7 +161,9 @@ func PlanPull(in Input) Plan {
 		to, warns := in.Cfg.StatusOf(remote)
 		warn.add(warns...)
 
-		if to != card.Status {
+		// to is "" when the issue's status field holds a value no
+		// column maps to: the card stays where it is.
+		if to != "" && to != card.Status {
 			changes = append(changes, MoveCard{Card: card, From: card.Status, To: to})
 		}
 		local := localTitle(card)
@@ -196,6 +198,9 @@ func PlanPull(in Input) Plan {
 		issue := in.Remote[id]
 		to, warns := in.Cfg.StatusOf(issue)
 		warn.add(warns...)
+		if to == "" {
+			to = in.Cfg.DefaultStatus
+		}
 		changes = append(changes, AddCard{Issue: issue, To: to, WithNote: in.Cfg.Notes == config.NotesAlways})
 	}
 
@@ -265,11 +270,23 @@ func PlanPush(in Input) Plan {
 // CloseIssue disagrees with the issue's current state. ok is false if
 // none of that is necessary. Labels are compared case-insensitively,
 // as GitHub does, and a label is removed under the issue's own
-// spelling of it.
+// spelling of it. For an issue whose provider keeps status in a field
+// (is.HasStatusField), labels are left alone and the field is set to
+// `to`'s ProjectStatus instead, if it holds anything else.
 func RemoteUpdateFor(cfg *config.Config, is domain.Issue, to domain.StatusKey) (provider.IssueUpdate, bool) {
 	toStatus, found := cfg.Status(to)
 	if !found {
 		return provider.IssueUpdate{}, false
+	}
+
+	state := stateUpdate(toStatus, is)
+	if is.HasStatusField {
+		var status *string
+		if !domain.SameStatusName(is.Status, toStatus.ProjectStatus) {
+			s := toStatus.ProjectStatus
+			status = &s
+		}
+		return provider.IssueUpdate{Status: status, State: state}, status != nil || state != nil
 	}
 
 	var add []string
@@ -287,16 +304,32 @@ func RemoteUpdateFor(cfg *config.Config, is domain.Issue, to domain.StatusKey) (
 		}
 	}
 
-	var state *domain.IssueState
-	switch {
-	case toStatus.CloseIssue && is.State == domain.IssueOpen:
-		s := domain.IssueClosed
-		state = &s
-	case !toStatus.CloseIssue && is.State == domain.IssueClosed:
-		s := domain.IssueOpen
-		state = &s
-	}
-
 	ok := len(add) > 0 || len(remove) > 0 || state != nil
 	return provider.IssueUpdate{AddLabels: add, RemoveLabels: remove, State: state}, ok
+}
+
+// stateUpdate returns the state `is` must change to for column `to`
+// (closed for its CloseIssue column, open for any other), or nil if it
+// is already right.
+func stateUpdate(to domain.Status, is domain.Issue) *domain.IssueState {
+	var s domain.IssueState
+	switch {
+	case to.CloseIssue && is.State == domain.IssueOpen:
+		s = domain.IssueClosed
+	case !to.CloseIssue && is.State == domain.IssueClosed:
+		s = domain.IssueOpen
+	default:
+		return nil
+	}
+	return &s
+}
+
+// CreateLabels returns the labels to create an issue in column st
+// with: its status label, unless p keeps status in a field (then the
+// field is set by RemoteUpdateFor once the issue exists).
+func CreateLabels(p provider.IssueProvider, st domain.Status) []string {
+	if provider.UsesStatusField(p) || st.Label == "" {
+		return nil
+	}
+	return []string{st.Label}
 }

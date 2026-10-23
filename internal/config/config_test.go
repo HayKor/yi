@@ -179,6 +179,11 @@ func TestValidationErrors(t *testing.T) {
 			wantSub: "repository is required",
 		},
 		{
+			name:    "duplicate projectStatus",
+			yaml:    strings.Replace(fullExampleYAML, "    heading: Todo\n", "    heading: Todo\n    projectStatus: backlog\n", 1),
+			wantSub: `duplicate projectStatus "backlog"`,
+		},
+		{
 			name:    "yi init placeholder repository",
 			yaml:    strings.Replace(fullExampleYAML, "repository: my-org/yandex-ads\n", "repository: owner/repo\n", 1),
 			wantSub: `"owner/repo" placeholder`,
@@ -239,11 +244,6 @@ func TestValidationErrors(t *testing.T) {
 			name:    "missing heading",
 			yaml:    strings.Replace(fullExampleYAML, "    heading: Todo\n", "", 1),
 			wantSub: `statuses.todo: heading is required`,
-		},
-		{
-			name:    "missing label",
-			yaml:    strings.Replace(fullExampleYAML, "    label: status:todo\n", "", 1),
-			wantSub: `statuses.todo: label is required`,
 		},
 		{
 			name:    "unknown defaultStatus",
@@ -308,36 +308,16 @@ func TestValidationErrors(t *testing.T) {
 		}
 	})
 
-	t.Run("two missing labels collect two required problems, not a duplicate", func(t *testing.T) {
+	t.Run("labels are optional, duplicates are not", func(t *testing.T) {
 		yamlContent := strings.Replace(fullExampleYAML, "    label: status:todo\n", "", 1)
 		yamlContent = strings.Replace(yamlContent, "    label: status:in-progress\n", "", 1)
 		path, _ := writeConfig(t, yamlContent)
-
-		_, err := Load(path)
-		if err == nil {
-			t.Fatalf("Load() error = nil, want error")
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load() without two labels error = %v, want nil (provider checks labels)", err)
 		}
-		var ve *ValidationError
-		if !errors.As(err, &ve) {
-			t.Fatalf("Load() error is not *ValidationError: %v", err)
-		}
-
-		wantProblems := []string{
-			"statuses.todo: label is required",
-			"statuses.in-progress: label is required",
-		}
-		if len(ve.Problems) != len(wantProblems) {
-			t.Fatalf("Problems = %v, want %v", ve.Problems, wantProblems)
-		}
-		for i, want := range wantProblems {
-			if ve.Problems[i] != want {
-				t.Errorf("Problems[%d] = %q, want %q", i, ve.Problems[i], want)
-			}
-		}
-		for _, p := range ve.Problems {
-			if strings.Contains(p, "duplicate label") {
-				t.Errorf("Problems unexpectedly contains a duplicate-label problem: %q", p)
-			}
+		if got := cfg.StatusLabels(); len(got) != len(cfg.Statuses)-2 {
+			t.Errorf("StatusLabels() = %v, want only the set labels", got)
 		}
 	})
 }
@@ -403,6 +383,63 @@ func TestStatusOf(t *testing.T) {
 				}
 			} else if len(warnings) != 0 {
 				t.Errorf("warnings = %v, want none", warnings)
+			}
+		})
+	}
+}
+
+func TestProjectStatusDefaultsToHeading(t *testing.T) {
+	yamlContent := strings.Replace(fullExampleYAML, "    heading: In Progress\n", "    heading: In Progress\n    projectStatus: Doing\n", 1)
+	path, _ := writeConfig(t, yamlContent)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	want := map[domain.StatusKey]string{"backlog": "Backlog", "todo": "Todo", "in-progress": "Doing", "completed": "Completed"}
+	for _, s := range cfg.Statuses {
+		if s.ProjectStatus != want[s.Key] {
+			t.Errorf("statuses.%s ProjectStatus = %q, want %q", s.Key, s.ProjectStatus, want[s.Key])
+		}
+	}
+}
+
+// With a status field, labels are ignored: the field's value picks the
+// column, an empty value means defaultStatus, and an unknown one is
+// reported as "" with a warning.
+func TestStatusOfStatusField(t *testing.T) {
+	path, _ := writeConfig(t, fullExampleYAML)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	field := func(status string, labels ...string) domain.Issue {
+		return domain.Issue{ID: 5, State: domain.IssueOpen, Labels: labels, HasStatusField: true, Status: status}
+	}
+	cases := []struct {
+		name    string
+		issue   domain.Issue
+		wantKey domain.StatusKey
+		warn    string
+	}{
+		{"matching option", field("Todo"), "todo", ""},
+		{"option in another case and spacing", field(" in progress "), "in-progress", ""},
+		{"labels ignored", field("Todo", "status:in-progress"), "todo", ""},
+		{"not on the project", field("", "status:todo"), "backlog", ""},
+		{"unknown option", field("Review"), "", `#5 has project status "Review", which no column maps to`},
+		{"closed wins", domain.Issue{ID: 5, State: domain.IssueClosed, HasStatusField: true, Status: "Todo"}, "completed", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			key, warnings := cfg.StatusOf(c.issue)
+			if key != c.wantKey {
+				t.Errorf("StatusOf() key = %q, want %q", key, c.wantKey)
+			}
+			if c.warn == "" && len(warnings) != 0 {
+				t.Errorf("warnings = %v, want none", warnings)
+			}
+			if c.warn != "" && (len(warnings) != 1 || warnings[0] != c.warn) {
+				t.Errorf("warnings = %v, want [%q]", warnings, c.warn)
 			}
 		})
 	}

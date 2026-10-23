@@ -29,9 +29,16 @@ type Provider struct {
 	// is the error returned once that budget is exhausted.
 	failAfter int
 	failErr   error
+
+	// statusField makes the provider keep status in a field (a GitHub
+	// Project's Status) instead of labels; see NewWithStatusField.
+	statusField bool
 }
 
-var _ provider.IssueProvider = (*Provider)(nil)
+var (
+	_ provider.IssueProvider = (*Provider)(nil)
+	_ provider.StatusFielder = (*Provider)(nil)
+)
 
 // New returns an empty Provider.
 func New() *Provider {
@@ -41,6 +48,19 @@ func New() *Provider {
 		failAfter: -1,
 	}
 }
+
+// NewWithStatusField returns an empty Provider that keeps issue status
+// in a field, like a GitHub provider configured with a project: every
+// issue it returns has HasStatusField set, and UpdateIssue applies
+// IssueUpdate.Status. A seeded issue's Status is its field value.
+func NewWithStatusField() *Provider {
+	p := New()
+	p.statusField = true
+	return p
+}
+
+// StatusField reports whether p was built by NewWithStatusField.
+func (p *Provider) StatusField() bool { return p.statusField }
 
 // Seed adds issues to the provider directly, bypassing CreateIssue
 // and without recording a call. It also advances the id counter used
@@ -98,7 +118,7 @@ func (p *Provider) ListOpenIssues(ctx context.Context) ([]domain.Issue, error) {
 	var open []domain.Issue
 	for _, iss := range p.issues {
 		if iss.State == domain.IssueOpen {
-			open = append(open, cloneIssue(iss))
+			open = append(open, p.out(iss))
 		}
 	}
 	sort.Slice(open, func(i, j int) bool { return open[i].ID < open[j].ID })
@@ -116,7 +136,7 @@ func (p *Provider) GetIssue(ctx context.Context, id int) (domain.Issue, error) {
 	if !ok {
 		return domain.Issue{}, fmt.Errorf("get issue %d: %w", id, provider.ErrNotFound)
 	}
-	return cloneIssue(iss), nil
+	return p.out(iss), nil
 }
 
 // CreateIssue creates a new open issue with the next available id.
@@ -142,13 +162,15 @@ func (p *Provider) CreateIssue(ctx context.Context, in provider.NewIssue) (domai
 		UpdatedAt: time.Now(),
 	}
 	p.issues[id] = cloneIssue(iss)
-	return cloneIssue(iss), nil
+	return p.out(iss), nil
 }
 
 // UpdateIssue applies upd to the issue with id: Title, then
 // AddLabels (skipping labels already present, keeping insertion
 // order), then RemoveLabels (removing an absent label is not an
-// error), then State. It always sets UpdatedAt to time.Now().
+// error), then State, then Status (an error unless the provider was
+// built by NewWithStatusField). It always sets UpdatedAt to
+// time.Now().
 func (p *Provider) UpdateIssue(ctx context.Context, id int, upd provider.IssueUpdate) (domain.Issue, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -158,6 +180,10 @@ func (p *Provider) UpdateIssue(ctx context.Context, id int, upd provider.IssueUp
 	iss, ok := p.issues[id]
 	if !ok {
 		return domain.Issue{}, fmt.Errorf("update issue %d: %w", id, provider.ErrNotFound)
+	}
+
+	if upd.Status != nil && !p.statusField {
+		return domain.Issue{}, fmt.Errorf("update issue %d: fake provider has no status field", id)
 	}
 
 	if err := p.consumeMutationLocked(); err != nil {
@@ -192,10 +218,14 @@ func (p *Provider) UpdateIssue(ctx context.Context, id int, upd provider.IssueUp
 		iss.State = *upd.State
 	}
 
+	if upd.Status != nil {
+		iss.Status = *upd.Status
+	}
+
 	iss.UpdatedAt = time.Now()
 
 	p.issues[id] = cloneIssue(iss)
-	return cloneIssue(iss), nil
+	return p.out(iss), nil
 }
 
 // consumeMutationLocked reports whether the current mutating call
@@ -213,6 +243,14 @@ func (p *Provider) consumeMutationLocked() error {
 
 // cloneIssue returns a deep copy of iss so neither Provider nor its
 // caller can mutate the other's Labels slice through it.
+// out is the copy of iss the provider hands to a caller: in status
+// field mode it is marked HasStatusField.
+func (p *Provider) out(iss domain.Issue) domain.Issue {
+	iss = cloneIssue(iss)
+	iss.HasStatusField = p.statusField
+	return iss
+}
+
 func cloneIssue(iss domain.Issue) domain.Issue {
 	iss.Labels = append([]string(nil), iss.Labels...)
 	return iss

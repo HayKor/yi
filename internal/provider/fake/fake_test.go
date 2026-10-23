@@ -12,6 +12,7 @@ import (
 
 func TestFakeConformance(t *testing.T) {
 	providertest.Run(t, func(t *testing.T) provider.IssueProvider { return New() })
+	providertest.RunStatusField(t, func(t *testing.T) provider.IssueProvider { return NewWithStatusField() })
 }
 
 func TestFakeFailAfter(t *testing.T) {
@@ -109,5 +110,20 @@ func TestFakeReturnsCopies(t *testing.T) {
 	}
 	if got.Labels[0] != "a" {
 		t.Errorf("internal state mutated through returned slice: Labels = %v, want [a]", got.Labels)
+	}
+}
+
+func TestStatusRejectedWithoutStatusField(t *testing.T) {
+	p := New()
+	iss, err := p.CreateIssue(context.Background(), provider.NewIssue{Title: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	todo := "Todo"
+	if _, err := p.UpdateIssue(context.Background(), iss.ID, provider.IssueUpdate{Status: &todo}); err == nil {
+		t.Errorf("UpdateIssue(Status) on a labels-mode fake = nil error, want an error")
+	}
+	if iss.HasStatusField {
+		t.Errorf("labels-mode fake returned HasStatusField = true")
 	}
 }

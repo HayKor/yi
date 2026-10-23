@@ -36,6 +36,13 @@ type Issue struct {
 	Labels    []string
 	URL       string
 	UpdatedAt time.Time
+
+	// HasStatusField is set by a provider that keeps issue status in a
+	// field of the tracker (a GitHub Project's Status) instead of in
+	// labels. Status is then that field's value: "" if the issue isn't
+	// on the project or the field is empty.
+	HasStatusField bool
+	Status         string
 }
 
 // HasLabel reports whether the issue carries the given label,
@@ -60,12 +67,20 @@ func (i Issue) FindLabel(label string) (string, bool) {
 // StatusKey identifies a kanban column/status in the config.
 type StatusKey string
 
-// Status maps a kanban column to an issue label.
+// Status maps a kanban column to an issue label, or to a value of the
+// tracker's status field (ProjectStatus) when the provider has one.
 type Status struct {
-	Key        StatusKey
-	Heading    string
-	Label      string
-	CloseIssue bool
+	Key           StatusKey
+	Heading       string
+	Label         string
+	ProjectStatus string
+	CloseIssue    bool
+}
+
+// SameStatusName reports whether two status-field values name the same
+// option: compared case-insensitively, ignoring surrounding spaces.
+func SameStatusName(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
 
 // wipLimitRe matches the Kanban plugin's max-items suffix on a lane

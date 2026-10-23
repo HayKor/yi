@@ -59,19 +59,24 @@ func runNew(cmd *cobra.Command, d Deps, titleArg, statusFlag, body string) error
 	// Create the issue before touching the board: if the tracker call
 	// fails, nothing is written locally, so there's no id-less card
 	// left behind for the next push to turn into a duplicate issue.
-	issue, err := p.prov.CreateIssue(ctx, provider.NewIssue{Title: title, Body: body, Labels: []string{st.Label}})
+	issue, err := p.prov.CreateIssue(ctx, provider.NewIssue{Title: title, Body: body, Labels: reconcile.CreateLabels(p.prov, st)})
 	if err != nil {
 		return err
 	}
 	id := issue.ID
 
-	// A failed close doesn't stop the card from being added: the issue
-	// exists, so the board must record it (a later push closes it).
+	// Close it for a CloseIssue column, and set its status field when
+	// the provider keeps status there. A failure doesn't stop the card
+	// from being added: the issue exists, so the board must record it
+	// (a later push finishes the job).
 	var closeErr error
-	if st.CloseIssue {
-		closed := domain.IssueClosed
-		if _, err := p.prov.UpdateIssue(ctx, id, provider.IssueUpdate{State: &closed}); err != nil {
-			closeErr = fmt.Errorf("#%d was created but not closed (run yi push to close it): %w", id, err)
+	if upd, ok := reconcile.RemoteUpdateFor(p.cfg, issue, statusKey); ok {
+		if _, err := p.prov.UpdateIssue(ctx, id, upd); err != nil {
+			what := "its status was not set"
+			if upd.State != nil {
+				what = "it was not closed"
+			}
+			closeErr = fmt.Errorf("#%d was created but %s (run yi push to fix it): %w", id, what, err)
 		}
 	}
 

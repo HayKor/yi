@@ -258,7 +258,7 @@ func (a *Applier) applyCreateIssue(ctx context.Context, v CreateIssue, created *
 	newIssue, err := a.Provider.CreateIssue(ctx, provider.NewIssue{
 		Title:  v.Title,
 		Body:   v.Body,
-		Labels: []string{toStatus.Label},
+		Labels: CreateLabels(a.Provider, toStatus),
 	})
 	if err != nil {
 		return err
@@ -280,12 +280,13 @@ func (a *Applier) applyCreateIssue(ctx context.Context, v CreateIssue, created *
 		}
 	}
 
-	if toStatus.CloseIssue {
+	// Close it for a CloseIssue column, and set its status field when
+	// the provider keeps status there: only now that its id is safe.
+	if upd, ok := RemoteUpdateFor(a.Cfg, newIssue, v.Status); ok {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		closed := domain.IssueClosed
-		if _, err := a.Provider.UpdateIssue(ctx, id, provider.IssueUpdate{State: &closed}); err != nil {
+		if _, err := a.Provider.UpdateIssue(ctx, id, upd); err != nil {
 			return err
 		}
 	}

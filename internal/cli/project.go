@@ -75,6 +75,7 @@ func loadProject(ctx context.Context, d Deps, flag string) (*project, error) {
 	prov, err := newProvider(ctx, provider.Config{
 		Name:       cfg.Provider,
 		Repository: cfg.Repository,
+		Statuses:   cfg.Statuses,
 		Options:    cfg.ProviderOptions,
 	})
 	if err != nil {

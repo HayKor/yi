@@ -123,6 +123,9 @@ func (RenameRemote) isChange() {}
 // to print a plan before it's applied.
 func Describe(cfg *config.Config, c Change) string {
 	heading := func(k domain.StatusKey) string {
+		if k == "" {
+			return "-" // a status field value no column maps to
+		}
 		if s, ok := cfg.Status(k); ok {
 			return s.Heading
 		}

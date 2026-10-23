@@ -47,6 +47,7 @@ func validate(cfg *Config, raw rawConfig) error {
 	} else {
 		seenHeadings := map[string]bool{}
 		seenLabels := map[string]bool{}
+		seenProject := map[string]bool{}
 		closeCount := 0
 		for _, s := range cfg.Statuses {
 			if s.Heading == "" {
@@ -59,13 +60,22 @@ func validate(cfg *Config, raw rawConfig) error {
 				seenHeadings[h] = true
 			}
 
-			if s.Label == "" {
-				problems = append(problems, fmt.Sprintf("statuses.%s: label is required", s.Key))
-			} else if l := strings.ToLower(s.Label); seenLabels[l] {
-				// Label names are case-insensitive (domain.Issue.HasLabel).
-				problems = append(problems, fmt.Sprintf("duplicate label %q", s.Label))
-			} else {
+			// label is optional here: a provider that keeps status in
+			// labels requires it (provider.RequireLabels).
+			if l := strings.ToLower(s.Label); l != "" {
+				if seenLabels[l] {
+					// Label names are case-insensitive (domain.Issue.HasLabel).
+					problems = append(problems, fmt.Sprintf("duplicate label %q", s.Label))
+				}
 				seenLabels[l] = true
+			}
+
+			// Two columns on one status field option would make
+			// StatusOf ambiguous.
+			if p := strings.ToLower(strings.TrimSpace(s.ProjectStatus)); p != "" && seenProject[p] {
+				problems = append(problems, fmt.Sprintf("duplicate projectStatus %q", s.ProjectStatus))
+			} else {
+				seenProject[p] = true
 			}
 
 			if s.CloseIssue {

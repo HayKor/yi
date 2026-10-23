@@ -61,9 +61,10 @@ type Config struct {
 
 // rawStatus is the shape of one entry under the "statuses" mapping.
 type rawStatus struct {
-	Heading    string `yaml:"heading"`
-	Label      string `yaml:"label"`
-	CloseIssue bool   `yaml:"closeIssue"`
+	Heading       string `yaml:"heading"`
+	Label         string `yaml:"label"`
+	ProjectStatus string `yaml:"projectStatus"`
+	CloseIssue    bool   `yaml:"closeIssue"`
 }
 
 // rawGitBranches is the shape of "git.branches".
@@ -230,11 +231,16 @@ func parseStatuses(node *yaml.Node) ([]domain.Status, error) {
 		if err := valNode.Decode(&rs); err != nil {
 			return nil, fmt.Errorf("statuses.%s: %w", keyNode.Value, err)
 		}
+		projectStatus := rs.ProjectStatus
+		if projectStatus == "" {
+			projectStatus = rs.Heading
+		}
 		statuses = append(statuses, domain.Status{
-			Key:        domain.StatusKey(keyNode.Value),
-			Heading:    rs.Heading,
-			Label:      rs.Label,
-			CloseIssue: rs.CloseIssue,
+			Key:           domain.StatusKey(keyNode.Value),
+			Heading:       rs.Heading,
+			Label:         rs.Label,
+			ProjectStatus: projectStatus,
+			CloseIssue:    rs.CloseIssue,
 		})
 	}
 	return statuses, nil
@@ -307,12 +313,14 @@ func (c *Config) CloseStatus() domain.Status {
 	return domain.Status{}
 }
 
-// StatusLabels returns the labels of all configured statuses, in config
-// order. Validation guarantees every status has a non-empty label.
+// StatusLabels returns the labels of all configured statuses that have
+// one, in config order.
 func (c *Config) StatusLabels() []string {
 	labels := make([]string, 0, len(c.Statuses))
 	for _, s := range c.Statuses {
-		labels = append(labels, s.Label)
+		if s.Label != "" {
+			labels = append(labels, s.Label)
+		}
 	}
 	return labels
 }
@@ -325,14 +333,32 @@ func (c *Config) StatusLabels() []string {
 //     label it carries. If more than one status label matches, a
 //     warning is returned alongside the first match.
 //  3. An open issue with no status label maps to DefaultStatus.
+//
+// For an issue whose provider keeps status in a field
+// (issue.HasStatusField), rules 2-3 use that field instead of labels:
+// an empty value maps to DefaultStatus, a value matching a status's
+// ProjectStatus to that status, and any other value to "" (unknown)
+// plus a warning, so callers can leave the card where it is.
 func (c *Config) StatusOf(issue domain.Issue) (domain.StatusKey, []string) {
 	if issue.State == domain.IssueClosed {
 		return c.CloseStatus().Key, nil
 	}
 
+	if issue.HasStatusField {
+		if issue.Status == "" {
+			return c.DefaultStatus, nil
+		}
+		for _, s := range c.Statuses {
+			if domain.SameStatusName(s.ProjectStatus, issue.Status) {
+				return s.Key, nil
+			}
+		}
+		return "", []string{fmt.Sprintf("#%d has project status %q, which no column maps to", issue.ID, issue.Status)}
+	}
+
 	var matched []domain.Status
 	for _, s := range c.Statuses {
-		if issue.HasLabel(s.Label) {
+		if s.Label != "" && issue.HasLabel(s.Label) {
 			matched = append(matched, s)
 		}
 	}

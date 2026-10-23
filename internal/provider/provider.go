@@ -7,6 +7,8 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -43,6 +45,40 @@ type IssueUpdate struct {
 	AddLabels    []string
 	RemoveLabels []string
 	State        *domain.IssueState
+	// Status sets the tracker's status field (see
+	// domain.Issue.HasStatusField) to the option with this name,
+	// putting the issue on the project first if it isn't there yet.
+	Status *string
+}
+
+// StatusFielder is implemented by a provider that may keep issue status
+// in a tracker field instead of labels; StatusField reports whether
+// this instance does (a GitHub provider configured with a project).
+type StatusFielder interface {
+	StatusField() bool
+}
+
+// UsesStatusField reports whether p keeps issue status in a tracker
+// field (see StatusFielder) rather than in labels.
+func UsesStatusField(p IssueProvider) bool {
+	f, ok := p.(StatusFielder)
+	return ok && f.StatusField()
+}
+
+// RequireLabels checks that every status has a label, for a provider
+// that keeps status in labels: config leaves label optional, since a
+// provider with a status field doesn't need one.
+func RequireLabels(statuses []domain.Status) error {
+	var missing []string
+	for _, s := range statuses {
+		if s.Label == "" {
+			missing = append(missing, string(s.Key))
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("statuses %s: label is required (status is kept in labels)", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 // Config configures a provider instance, as read from a project's
@@ -52,6 +88,10 @@ type Config struct {
 	Name string
 	// Repository is the "owner/repo" (or equivalent) identifier.
 	Repository string
+	// Statuses are the board's columns, in config order, so a provider
+	// can check them against the tracker (labels it needs, status
+	// field options it maps them to).
+	Statuses []domain.Status
 	// Options is the raw provider-specific config section (the
 	// "github:"/"gitlab:" mapping); the provider decodes it itself.
 	Options yaml.Node
