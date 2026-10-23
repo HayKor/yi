@@ -202,7 +202,34 @@ $ yi done 42
 
 ### `yi version`
 
-Печатает версию (`-X main.version=...` при сборке, иначе `dev`).
+Печатает версию: тег релиза, а у сборки из исходников — `devel-<commit>`.
+
+## Запуск из Obsidian
+
+Чтобы не ходить в терминал, повесьте команды `yi` на горячие клавиши через community-плагин
+[Shell commands](https://github.com/Taitava/obsidian-shellcommands):
+
+1. Settings → Community plugins → Browse → «Shell commands» → Install, Enable.
+2. В настройках плагина добавьте команды (кнопка «New shell command»):
+
+   ```sh
+   cd {{folder_path:absolute}} && yi pull
+   cd {{folder_path:absolute}} && yi push --yes
+   cd {{folder_path:absolute}} && yi status
+   ```
+
+   `{{folder_path:absolute}}` — папка открытого файла. `yi` ищет `.issue-sync.yml` вверх от
+   неё, поэтому команды работают и с открытой доской, и из заметки в `Tasks/`. Кавычки вокруг
+   переменной не нужны: плагин сам экранирует её значение. `push` из Obsidian запускается
+   с `--yes`: спросить подтверждение там негде. Если нужен предпросмотр, заведите отдельную
+   команду `yi push --dry-run`.
+3. Settings → Hotkeys → найдите команды «Shell commands: Execute: …» и назначьте клавиши.
+
+Вывод команды (`✓ …` или ошибка) плагин показывает уведомлением. Если Obsidian запущен
+из меню рабочего стола, а не из терминала, в его `PATH` может не оказаться папки с `yi`.
+Тогда укажите полный путь (`~/.local/bin/yi pull`) или добавьте папку в настройках плагина: вкладка Environments →
+«Add directories to the PATH environment variable». Доска перезагружается в Obsidian сама. Если во время
+команды доску правили в Obsidian, `yi` ничего не запишет и попросит повторить запуск.
 
 ## Как работает синхронизация
 
