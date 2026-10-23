@@ -120,7 +120,7 @@ func TestNewCommand(t *testing.T) {
 	if !strings.Contains(kb, "## Todo") {
 		t.Fatalf("Kanban.md = %q", kb)
 	}
-	if !strings.Contains(kb, "[[Tasks/1 Creative Preview]] `#1`") {
+	if !strings.Contains(kb, "[[Tasks/1 Creative Preview|Creative Preview]] `#1`") {
 		t.Errorf("Kanban.md = %q, want the linked card", kb)
 	}
 
@@ -208,7 +208,7 @@ func TestStartCommand(t *testing.T) {
 	if !strings.Contains(kb, "## In Progress") {
 		t.Fatalf("Kanban.md = %q", kb)
 	}
-	if !strings.Contains(kb, "[[Tasks/42 Yandex OAuth]]") {
+	if !strings.Contains(kb, "[[Tasks/42 Yandex OAuth|Yandex OAuth]]") {
 		t.Errorf("Kanban.md = %q, want a note link for #42", kb)
 	}
 
@@ -246,7 +246,7 @@ func TestStartNotOnBoard(t *testing.T) {
 	if !strings.Contains(kb, "## In Progress") {
 		t.Fatalf("Kanban.md = %q", kb)
 	}
-	if !strings.Contains(kb, "[[Tasks/7 Remote Only]] `#7`") {
+	if !strings.Contains(kb, "[[Tasks/7 Remote Only|Remote Only]] `#7`") {
 		t.Errorf("Kanban.md = %q, want the added card with its note", kb)
 	}
 }

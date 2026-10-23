@@ -217,12 +217,12 @@ func TestBareIDLinkIsManaged(t *testing.T) {
 	p.Seed(domain.Issue{ID: 7, Title: "???", State: domain.IssueOpen, Labels: []string{"status:backlog"}})
 
 	syncRound(t, cfg, p, false)
-	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/7]] `#7`\n"; !strings.Contains(got, want) {
+	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/7|???]] `#7`\n"; !strings.Contains(got, want) {
 		t.Fatalf("Kanban.md = %q, want it to contain %q", got, want)
 	}
 	assertSteady(t, cfg, p)
-	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/7]] `#7`\n"; !strings.Contains(got, want) {
-		t.Errorf("Kanban.md = %q after re-sync, want it to still contain %q (no alias)", got, want)
+	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/7|???]] `#7`\n"; !strings.Contains(got, want) {
+		t.Errorf("Kanban.md = %q after re-sync, want it to still contain %q", got, want)
 	}
 
 	title := "Real title"
@@ -230,7 +230,7 @@ func TestBareIDLinkIsManaged(t *testing.T) {
 		t.Fatal(err)
 	}
 	syncRound(t, cfg, p, false)
-	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/7 Real title]] `#7`\n"; !strings.Contains(got, want) {
+	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/7 Real title|Real title]] `#7`\n"; !strings.Contains(got, want) {
 		t.Errorf("Kanban.md = %q, want it to contain %q", got, want)
 	}
 	if entries, _ := os.ReadDir(cfg.TasksDir); len(entries) != 1 || entries[0].Name() != "7 Real title.md" {

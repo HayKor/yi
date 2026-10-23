@@ -248,7 +248,17 @@ func TestValidationErrors(t *testing.T) {
 		{
 			name:    "unknown defaultStatus",
 			yaml:    strings.Replace(fullExampleYAML, "defaultStatus: backlog\n", "defaultStatus: nope\n", 1),
-			wantSub: `defaultStatus: unknown status "nope"`,
+			wantSub: `defaultStatus: unknown status "nope" (one of: backlog,`,
+		},
+		{
+			name:    "defaultStatus given as a label",
+			yaml:    strings.Replace(fullExampleYAML, "defaultStatus: backlog\n", "defaultStatus: status:todo\n", 1),
+			wantSub: `defaultStatus: unknown status "status:todo" (use the status key "todo"`,
+		},
+		{
+			name:    "startStatus given as a heading",
+			yaml:    strings.Replace(fullExampleYAML, "startStatus: in-progress\n", "startStatus: In Progress\n", 1),
+			wantSub: `startStatus: unknown status "In Progress" (use the status key "in-progress"`,
 		},
 		{
 			name:    "doneStatus without closeIssue",

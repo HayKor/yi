@@ -167,6 +167,10 @@ func PlanPull(in Input) Plan {
 		local := localTitle(card)
 		if titlesDiffer(remote.Title, local) {
 			changes = append(changes, RenameLocal{Card: card, ID: id, From: local, To: cleanTitle(remote.Title)})
+		} else if card.Alias == "" && managedLink(card) {
+			if alias := aliasText(cleanTitle(remote.Title)); alias != "" {
+				changes = append(changes, AliasLink{Card: card, ID: id, Alias: alias})
+			}
 		}
 		// Only a link-less card gets a note linked: a card that already
 		// has a [[link]] yi can't resolve (an Obsidian shortest-path

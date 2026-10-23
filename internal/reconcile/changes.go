@@ -59,6 +59,18 @@ type RenameLocal struct {
 
 func (RenameLocal) isChange() {}
 
+// AliasLink gives Card's link to its yi-managed note the alias Alias
+// (the issue title), so the board shows "Title" instead of
+// "Tasks/42 Title". It upgrades cards linked before yi wrote aliases.
+// Applying it is a pull-side change.
+type AliasLink struct {
+	Card  *kanban.Card
+	ID    int
+	Alias string
+}
+
+func (AliasLink) isChange() {}
+
 // LinkNote creates a task note for Card's issue and rewrites the card
 // to link to it, because config.Notes is NotesAlways and the card has
 // no note yet. Applying it is a pull-side change.
@@ -128,6 +140,8 @@ func Describe(cfg *config.Config, c Change) string {
 		return s
 	case RenameLocal:
 		return fmt.Sprintf("#%d rename: %q → %q", v.ID, v.From, v.To)
+	case AliasLink:
+		return fmt.Sprintf("#%d show %q instead of the note path", v.ID, v.Alias)
 	case LinkNote:
 		return fmt.Sprintf("#%d create note for %q", v.ID, v.Title)
 	case CreateIssue:

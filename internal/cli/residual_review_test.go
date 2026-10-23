@@ -21,7 +21,7 @@ func TestE2EPushKeepsIssueReferenceInTitle(t *testing.T) {
 	if got := env.prov.Issue(1).Title; got != "Regression (see #12)" {
 		t.Errorf("GitHub title = %q, want %q", got, "Regression (see #12)")
 	}
-	if got, want := env.kanban(), "- [ ] [[Tasks/1 Regression (see 12)]] `#1`\n"; !strings.Contains(got, want) {
+	if got, want := env.kanban(), "- [ ] [[Tasks/1 Regression (see 12)|Regression (see #12)]] `#1`\n"; !strings.Contains(got, want) {
 		t.Errorf("Kanban.md = %q, want it to contain %q", got, want)
 	}
 

@@ -9,10 +9,13 @@ import (
 )
 
 // FormatCard returns the canonical Markdown for a card's first line
-// (§6.2), without a trailing EOL. A zero id omits the "`#id`" token
-// entirely (controller ruling R2): callers that add a card before an
-// issue exists format it with id 0, then call SetIssueID once the
-// issue is created.
+// (§6.2), without a trailing EOL. With a link, the card is
+// "[[link|title]]", so the board shows the title rather than the
+// note's path; an empty title gives a bare "[[link]]". title must
+// then be usable as an alias (no "]"). A zero id omits the "`#id`"
+// token entirely (controller ruling R2): callers that add a card
+// before an issue exists format it with id 0, then call SetIssueID
+// once the issue is created.
 func FormatCard(checked bool, title, link string, id int) string {
 	box := " "
 	if checked {
@@ -26,6 +29,10 @@ func FormatCard(checked bool, title, link string, id int) string {
 	if link != "" {
 		sb.WriteString("[[")
 		sb.WriteString(link)
+		if title != "" {
+			sb.WriteString("|")
+			sb.WriteString(title)
+		}
 		sb.WriteString("]]")
 	} else {
 		sb.WriteString(title)

@@ -210,7 +210,7 @@ func TestPlanPullRename(t *testing.T) {
 
 func TestPullLossyTitleNoDrift(t *testing.T) {
 	cfg := testConfig(t, "on-demand")
-	board := buildBoard(t, "## Backlog\n\n- [ ] [[Tasks/31 Fix crash]] `#31`\n\n## Todo\n\n## In Progress\n\n## Completed\n")
+	board := buildBoard(t, "## Backlog\n\n- [ ] [[Tasks/31 Fix crash|Fix: crash]] `#31`\n\n## Todo\n\n## In Progress\n\n## Completed\n")
 
 	in := Input{
 		Cfg:   cfg,

@@ -374,10 +374,11 @@ func TestFormatCard(t *testing.T) {
 		id      int
 		want    string
 	}{
-		{"with note and id", false, "Yandex OAuth", "Tasks/42 Yandex OAuth", 42, "- [ ] [[Tasks/42 Yandex OAuth]] `#42`"},
+		{"with note and id", false, "Yandex OAuth", "Tasks/42 Yandex OAuth", 42, "- [ ] [[Tasks/42 Yandex OAuth|Yandex OAuth]] `#42`"},
+		{"with note, no alias", false, "", "Tasks/42", 42, "- [ ] [[Tasks/42]] `#42`"},
 		{"checked, no note", true, "Fix crash", "", 31, "- [x] Fix crash `#31`"},
 		{"no id, no note", false, "Title", "", 0, "- [ ] Title"},
-		{"no id, with note", false, "Yandex OAuth", "Tasks/42 Yandex OAuth", 0, "- [ ] [[Tasks/42 Yandex OAuth]]"},
+		{"no id, with note", false, "Yandex OAuth", "Tasks/42 Yandex OAuth", 0, "- [ ] [[Tasks/42 Yandex OAuth|Yandex OAuth]]"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

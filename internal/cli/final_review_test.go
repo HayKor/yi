@@ -51,7 +51,7 @@ func TestE2EPullKeepsCardDate(t *testing.T) {
 	env.prov.Seed(domain.Issue{ID: 5, Title: "Write docs", State: domain.IssueOpen, Labels: []string{"status:backlog"}})
 
 	env.mustRun("pull")
-	if got, want := env.kanban(), "- [ ] [[Tasks/5 Write docs]] @{2026-11-01} `#5`\n"; !strings.Contains(got, want) {
+	if got, want := env.kanban(), "- [ ] [[Tasks/5 Write docs|Write docs]] @{2026-11-01} `#5`\n"; !strings.Contains(got, want) {
 		t.Errorf("Kanban.md = %q, want it to contain %q", got, want)
 	}
 	if names := env.noteNames(); len(names) != 1 || names[0] != "5 Write docs.md" {
@@ -79,7 +79,7 @@ func TestE2EPushKeepsMetadataOutOfTitle(t *testing.T) {
 	if names := env.noteNames(); len(names) != 1 || names[0] != "1 Fix login.md" {
 		t.Errorf("notes = %q, want [1 Fix login.md]", names)
 	}
-	if got, want := env.kanban(), "- [ ] [[Tasks/1 Fix login]] @{2026-10-30} #urgent `#1`\n"; !strings.Contains(got, want) {
+	if got, want := env.kanban(), "- [ ] [[Tasks/1 Fix login|Fix login]] @{2026-10-30} #urgent `#1`\n"; !strings.Contains(got, want) {
 		t.Errorf("Kanban.md = %q, want it to contain %q", got, want)
 	}
 
@@ -167,7 +167,7 @@ func TestE2ENewCloseFailureStillAddsCard(t *testing.T) {
 	if !strings.Contains(env.stderr.String(), "close failed") {
 		t.Errorf("stderr = %q, want the close error", env.stderr.String())
 	}
-	if got, want := env.kanban(), "- [x] [[Tasks/1 Already done]] `#1`"; !strings.Contains(got, want) {
+	if got, want := env.kanban(), "- [x] [[Tasks/1 Already done|Already done]] `#1`"; !strings.Contains(got, want) {
 		t.Errorf("Kanban.md = %q, want it to contain %q", got, want)
 	}
 

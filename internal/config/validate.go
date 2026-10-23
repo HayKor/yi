@@ -79,17 +79,17 @@ func validate(cfg *Config, raw rawConfig) error {
 
 	if raw.DefaultStatus != "" {
 		if _, ok := cfg.Status(cfg.DefaultStatus); !ok {
-			problems = append(problems, fmt.Sprintf("defaultStatus: unknown status %q", raw.DefaultStatus))
+			problems = append(problems, unknownStatus("defaultStatus", raw.DefaultStatus, cfg.Statuses))
 		}
 	}
 	if raw.StartStatus != "" {
 		if _, ok := cfg.Status(cfg.StartStatus); !ok {
-			problems = append(problems, fmt.Sprintf("startStatus: unknown status %q", raw.StartStatus))
+			problems = append(problems, unknownStatus("startStatus", raw.StartStatus, cfg.Statuses))
 		}
 	}
 	if raw.DoneStatus != "" {
 		if st, ok := cfg.Status(cfg.DoneStatus); !ok {
-			problems = append(problems, fmt.Sprintf("doneStatus: unknown status %q", raw.DoneStatus))
+			problems = append(problems, unknownStatus("doneStatus", raw.DoneStatus, cfg.Statuses))
 		} else if !st.CloseIssue {
 			problems = append(problems, fmt.Sprintf("doneStatus %q must have closeIssue: true", raw.DoneStatus))
 		}
@@ -116,4 +116,23 @@ func validate(cfg *Config, raw rawConfig) error {
 		return nil
 	}
 	return &ValidationError{Path: cfg.Path, Problems: problems}
+}
+
+// unknownStatus describes a status reference (defaultStatus & co.)
+// that names no configured status key. Those fields take a key, so
+// when value is a status's label or heading instead, it says which key
+// was meant; otherwise it lists the valid keys.
+func unknownStatus(field, value string, statuses []domain.Status) string {
+	msg := fmt.Sprintf("%s: unknown status %q", field, value)
+	var keys []string
+	for _, s := range statuses {
+		if strings.EqualFold(value, s.Label) || domain.NormalizeHeading(value) == domain.NormalizeHeading(s.Heading) {
+			return fmt.Sprintf("%s (use the status key %q, not its label or heading)", msg, s.Key)
+		}
+		keys = append(keys, string(s.Key))
+	}
+	if len(keys) == 0 {
+		return msg
+	}
+	return fmt.Sprintf("%s (one of: %s)", msg, strings.Join(keys, ", "))
 }

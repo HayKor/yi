@@ -151,10 +151,10 @@ func TestApplyPullEndToEnd(t *testing.T) {
 		t.Fatalf("reading Kanban.md: %v", err)
 	}
 	got := string(data)
-	if !strings.Contains(got, "- [x] [[Tasks/57 Some task]] `#57`") {
+	if !strings.Contains(got, "- [x] [[Tasks/57 Some task|Some task]] `#57`") {
 		t.Errorf("Kanban.md = %q, want #57 checked and linked to its note", got)
 	}
-	if !strings.Contains(got, "[[Tasks/80 New thing]] `#80`") {
+	if !strings.Contains(got, "[[Tasks/80 New thing|New thing]] `#80`") {
 		t.Errorf("Kanban.md = %q, want #80 added with its note link", got)
 	}
 	if _, err := os.Stat(filepath.Join(cfg.TasksDir, "57 Some task.md")); err != nil {
@@ -341,7 +341,7 @@ func TestApplyCreateIssueWritesID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "- [ ] [[Tasks/1 New thing]] `#1`") {
+	if !strings.Contains(string(data), "- [ ] [[Tasks/1 New thing|New thing]] `#1`") {
 		t.Errorf("Kanban.md = %q, want the new card linked to its note with #1", data)
 	}
 	if _, err := os.Stat(filepath.Join(cfg.TasksDir, "1 New thing.md")); err != nil {
@@ -711,7 +711,7 @@ func TestRenameLocalRenamesNote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "[[Tasks/42 New Title]] `#42`") {
+	if !strings.Contains(string(data), "[[Tasks/42 New Title|New Title]] `#42`") {
 		t.Errorf("Kanban.md = %q, want the link target updated", data)
 	}
 
@@ -786,8 +786,13 @@ func TestPullTwiceIsNoopLossyTitle(t *testing.T) {
 		t.Fatalf("FetchRemote() error = %v", err)
 	}
 	plan := PlanPull(Input{Cfg: cfg, Board: board, Remote: remote, Missing: missing, HasNote: hasNoteFn(a)})
-	if !plan.Empty() {
-		t.Fatalf("first PlanPull = %#v, want none (sanitize(\"Fix: crash\") == sanitize(\"Fix crash\"))", plan.Changes)
+	// The legacy alias-less card only gains an alias: no rename
+	// (sanitize("Fix: crash") == sanitize("Fix crash")).
+	if len(plan.Changes) != 1 {
+		t.Fatalf("first PlanPull = %#v, want just an AliasLink", plan.Changes)
+	}
+	if al, ok := plan.Changes[0].(AliasLink); !ok || al.Alias != "Fix: crash" {
+		t.Fatalf("first PlanPull = %#v, want AliasLink to \"Fix: crash\"", plan.Changes)
 	}
 
 	if err := a.Apply(ctx, plan); err != nil {

@@ -101,6 +101,8 @@ func (a *Applier) applyOne(ctx context.Context, c Change, created *[]createdIssu
 		return a.applyLinkNote(v)
 	case RenameLocal:
 		return a.applyRenameLocal(v, log)
+	case AliasLink:
+		return a.Board.SetAlias(v.Card, v.Alias)
 	case CreateIssue:
 		return a.applyCreateIssue(ctx, v, created)
 	case SetStatus:
@@ -152,7 +154,11 @@ func (a *Applier) applyAddCard(v AddCard) error {
 		link = a.Notes.LinkTarget(notePath)
 	}
 
-	line := kanban.FormatCard(toStatus.CloseIssue, title, link, v.Issue.ID)
+	text := title
+	if link != "" {
+		text = aliasText(title)
+	}
+	line := kanban.FormatCard(toStatus.CloseIssue, text, link, v.Issue.ID)
 	_, err := a.Board.Add(v.To, line)
 	return err
 }
@@ -164,11 +170,16 @@ func (a *Applier) applyLinkNote(v LinkNote) error {
 	if err != nil {
 		return err
 	}
-	return a.Board.SetTitle(v.Card, wikilink(a.Notes.LinkTarget(notePath)))
+	return a.Board.SetTitle(v.Card, wikilink(a.Notes.LinkTarget(notePath), v.Title))
 }
 
-// wikilink formats a note link target as "[[target]]".
-func wikilink(target string) string {
+// wikilink formats a link to a task note as "[[target|title]]", so the
+// board shows the issue title instead of the note's path, or as
+// "[[target]]" if title leaves no alias text (see aliasText).
+func wikilink(target, title string) string {
+	if alias := aliasText(title); alias != "" {
+		return "[[" + target + "|" + alias + "]]"
+	}
 	return "[[" + target + "]]"
 }
 
@@ -206,7 +217,16 @@ func (a *Applier) applyRenameLocal(v RenameLocal, log io.Writer) error {
 		}
 		fmt.Fprintf(log, "warning: other links to %q were not updated\n", v.From)
 		if v.Card.Link != "" {
-			return a.Board.SetLink(v.Card, a.Notes.LinkTarget(newPath))
+			// An alias yi wrote (the old title) or a missing one follows
+			// the new title; an alias the user chose is kept.
+			oldAlias := v.Card.Alias
+			if err := a.Board.SetLink(v.Card, a.Notes.LinkTarget(newPath)); err != nil {
+				return err
+			}
+			if alias := aliasText(v.To); alias != "" && (oldAlias == "" || !titlesDiffer(oldAlias, v.From)) {
+				return a.Board.SetAlias(v.Card, alias)
+			}
+			return nil
 		}
 	}
 	return a.Board.SetTitle(v.Card, v.To)
@@ -255,7 +275,7 @@ func (a *Applier) applyCreateIssue(ctx context.Context, v CreateIssue, created *
 		if err != nil {
 			return err
 		}
-		if err := a.Board.SetTitle(v.Card, wikilink(a.Notes.LinkTarget(notePath))); err != nil {
+		if err := a.Board.SetTitle(v.Card, wikilink(a.Notes.LinkTarget(notePath), v.Title)); err != nil {
 			return err
 		}
 	}

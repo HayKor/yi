@@ -68,7 +68,7 @@ func TestPullLinkNoteKeepsDate(t *testing.T) {
 
 	syncRound(t, cfg, p, false)
 
-	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/5 Write docs]] @{2026-11-01} `#5`\n"; !strings.Contains(got, want) {
+	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/5 Write docs|Write docs]] @{2026-11-01} `#5`\n"; !strings.Contains(got, want) {
 		t.Errorf("Kanban.md = %q, want it to contain %q", got, want)
 	}
 	if _, err := os.Stat(filepath.Join(cfg.TasksDir, "5 Write docs.md")); err != nil {
@@ -99,7 +99,7 @@ func TestPushCreateKeepsMetadataOutOfTitle(t *testing.T) {
 	if !reflect.DeepEqual(names, []string{"1 Fix login.md"}) {
 		t.Errorf("notes = %q, want [\"1 Fix login.md\"]", names)
 	}
-	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/1 Fix login]] @{2026-10-30} #urgent `#1`\n"; !strings.Contains(got, want) {
+	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/1 Fix login|Fix login]] @{2026-10-30} #urgent `#1`\n"; !strings.Contains(got, want) {
 		t.Errorf("Kanban.md = %q, want it to contain %q", got, want)
 	}
 	assertSteady(t, cfg, p)
@@ -219,7 +219,7 @@ func TestAddCardNoteNameExcludesMetadata(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(cfg.TasksDir, "9 Fix login.md")); err != nil {
 		t.Errorf("note 9 Fix login.md not created: %v", err)
 	}
-	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/9 Fix login]] `#9`\n"; !strings.Contains(got, want) {
+	if got, want := readKanban(t, cfg), "- [ ] [[Tasks/9 Fix login|Fix login]] `#9`\n"; !strings.Contains(got, want) {
 		t.Errorf("Kanban.md = %q, want it to contain %q", got, want)
 	}
 	if plan := syncRound(t, cfg, p, false); !plan.Empty() {
